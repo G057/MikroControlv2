@@ -7,9 +7,10 @@ Wants=postgresql.service redis-server.service
 Type=simple
 User=www-data
 WorkingDirectory=/opt/mikrocontrol/backend
-Environment="PATH=/opt/mikrocontrol/backend/venv/bin"
+Environment="PATH=/opt/mikrocontrol/backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="CORS_ORIGINS=*"
 Environment="DATABASE_URL=postgresql://mikrocontrol:mikrocontrol_secret_2026@localhost:5432/mikrocontrol"
+ExecStartPre=/usr/bin/install -d -o www-data -g www-data /opt/mikrocontrol/backups
 ExecStart=/opt/mikrocontrol/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001
 Restart=always
 RestartSec=5
