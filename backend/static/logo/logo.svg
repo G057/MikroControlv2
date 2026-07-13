@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 80">
+  <rect width="280" height="80" rx="8" fill="#1e293b"/>
+  <text x="20" y="52" font-family="Arial,sans-serif" font-size="28" font-weight="bold" fill="#38bdf8">Mikro</text>
+  <text x="110" y="52" font-family="Arial,sans-serif" font-size="28" fill="#e2e8f0">Control</text>
+</svg>
