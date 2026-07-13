@@ -11,17 +11,25 @@
 ## Paso a paso
 
 ### 1. Dependencias del sistema
-Incluye PostgreSQL, Nginx, Python, Node (vía NodeSource para tener v18+) y
+Incluye PostgreSQL, Nginx, Node (vía NodeSource para tener v18+) y
 `libpq-dev`/`gcc` que necesita psycopg2.
+
+> **Python:** el requirements.txt tiene versiones fijadas que NO tienen wheel
+> para Python 3.14+. Por eso se instala **Python 3.12** vía el PPA deadsnakes
+> (igual que el Dockerfile `python:3.12-slim`). No uses el `python3` del
+> sistema si es 3.14.
 
 ```bash
 sudo apt update
-sudo apt install -y curl ca-certificates gnupg lsb-release
+sudo apt install -y curl ca-certificates gnupg lsb-release software-properties-common
 
 # Node.js 20 LTS (el de apt en 22.04 es muy viejo para Vite)
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 
-sudo apt install -y python3 python3-venv python3-pip nginx nodejs npm git \
+# Python 3.12 (necesario para las versiones fijadas de requirements.txt)
+sudo add-apt-repository -y ppa:deadsnakes/ppa
+sudo apt update
+sudo apt install -y python3.12 python3.12-venv python3.12-dev nginx nodejs git \
   postgresql postgresql-contrib libpq-dev gcc
 ```
 
@@ -44,10 +52,12 @@ sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE mikrocontrol TO mikro
 ```
 
 ### 4. Backend - entorno virtual y dependencias
+Usá **python3.12** (no el python3 del sistema si es 3.14).
 ```bash
 cd /opt/mikrocontrol/backend
-python3 -m venv venv
+python3.12 -m venv venv
 source venv/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
 deactivate
 ```
