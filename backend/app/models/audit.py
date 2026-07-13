@@ -19,3 +19,12 @@ class AuditLog(Base):
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", foreign_keys=[user_id])
+
+    __table_args__ = (
+        # Orden/paginado por fecha (siempre presente) y rangos date_from/date_to.
+        Index("ix_audit_logs_timestamp", "timestamp"),
+        # Filtros comunes + orden por fecha (evita el sort en tablas grandes).
+        Index("ix_audit_logs_resource_type_timestamp", "resource_type", "timestamp"),
+        Index("ix_audit_logs_username_timestamp", "username", "timestamp"),
+        Index("ix_audit_logs_action_timestamp", "action", "timestamp"),
+    )

@@ -37,3 +37,10 @@ class Alert(Base):
 
     router = relationship("Router", back_populates="alerts")
     rule = relationship("AlertRule")
+
+    __table_args__ = (
+        # Filtros frecuentes en /events y paneles: por router, por estado y por severidad.
+        Index("ix_alerts_router_created", "router_id", "created_at"),
+        Index("ix_alerts_resolved_created", "is_resolved", "created_at"),
+        Index("ix_alerts_severity_created", "severity", "created_at"),
+    )

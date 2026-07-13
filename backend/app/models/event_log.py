@@ -22,4 +22,8 @@ class EventLog(Base):
 
     __table_args__ = (
         Index("ix_event_logs_router_time", "router_id", "ros_time"),
+        # Filtro por router + orden por id (la query ordena por id desc).
+        Index("ix_event_logs_router_id_id", "router_id", "id"),
+        # Filtro por severidad + orden por id.
+        Index("ix_event_logs_severity_id", "severity", "id"),
     )

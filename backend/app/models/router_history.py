@@ -26,4 +26,6 @@ class RouterHistory(Base):
     __table_args__ = (
         UniqueConstraint("router_id", "ros_id", name="uq_router_history_ros_id"),
         Index("ix_router_history_router_time", "router_id", "ros_time"),
+        # Filtro por router + rango de fecha (first_seen) en la vista de historial.
+        Index("ix_router_history_router_first_seen", "router_id", "first_seen"),
     )
