@@ -43,30 +43,46 @@ class Settings(BaseSettings):
 
 def _resolve_secret_key(current: str) -> str:
     """Si SECRET_KEY sigue siendo el valor por defecto (o vacío), genera una
-    clave aleatoria y la persiste en 'secret.key' en la raíz del backend para
-    que los tokens JWT sobrevivan reinicios y no se use la clave conocida."""
+    clave aleatoria y la persiste para que los tokens JWT y los secretos
+    cifrados (contraseñas de routers) sobrevivan reinicios.
+
+    Intenta varias ubicaciones de persistencia, en orden:
+      1. 'secret.key' en la raíz del backend (si el proceso puede escribir).
+      2. '$HOME/.mikrocontrol_secret.key' (el usuario del servicio, p.ej.
+         www-data, suele poder escribir en su HOME => persiste entre reinicios).
+    Si ninguna es escribible, cae en una clave efímera (no persisten los tokens).
+    """
     if current and current != _DEFAULT_SECRET:
         return current
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    key_path = os.path.join(base_dir, "secret.key")
-    try:
-        if os.path.isfile(key_path):
-            with open(key_path, "r", encoding="utf-8") as f:
-                saved = f.read().strip()
-            if saved:
-                return saved
-        generated = secrets.token_urlsafe(48)
-        with open(key_path, "w", encoding="utf-8") as f:
-            f.write(generated)
+    home = os.environ.get("HOME") or "/var/www"
+    candidates = [
+        os.path.join(base_dir, "secret.key"),
+        os.path.join(home, ".mikrocontrol_secret.key"),
+    ]
+    for key_path in candidates:
         try:
-            os.chmod(key_path, 0o600)
+            if os.path.isfile(key_path):
+                with open(key_path, "r", encoding="utf-8") as f:
+                    saved = f.read().strip()
+                if saved:
+                    return saved
+            generated = secrets.token_urlsafe(48)
+            parent = os.path.dirname(key_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            with open(key_path, "w", encoding="utf-8") as f:
+                f.write(generated)
+            try:
+                os.chmod(key_path, 0o600)
+            except OSError:
+                pass
+            print(f"SECRET_KEY generada y guardada en {key_path}")
+            return generated
         except OSError:
-            pass
-        print("SECRET_KEY generada y guardada en secret.key")
-        return generated
-    except OSError:
-        # Último recurso: clave efímera (los tokens no sobreviven reinicios).
-        return secrets.token_urlsafe(48)
+            continue
+    # Último recurso: clave efímera (los tokens no sobreviven reinicios).
+    return secrets.token_urlsafe(48)
 
 
 @lru_cache

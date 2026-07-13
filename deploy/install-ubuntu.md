@@ -68,6 +68,12 @@ cd /opt/mikrocontrol
 cp .env.example .env
 # Permitir cualquier origen CORS (ajustá si querés restringir)
 echo "CORS_ORIGINS=*" >> .env
+# Clave secreta ESTABLE en backend/.env (lo lee el servicio vía EnvironmentFile).
+# Si cambia en cada reinicio, las contraseñas de routers cifradas y los tokens
+# JWT dejan de funcionar.
+SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(48))")
+printf 'SECRET_KEY=%s\n' "$SECRET_KEY" | sudo tee /opt/mikrocontrol/backend/.env >/dev/null
+sudo chmod 644 /opt/mikrocontrol/backend/.env
 ```
 
 ### 6. Frontend - build de producción
