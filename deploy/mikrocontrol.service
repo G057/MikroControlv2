@@ -12,6 +12,9 @@ Environment="CORS_ORIGINS=*"
 Environment="DATABASE_URL=postgresql://mikrocontrol:mikrocontrol_secret_2026@localhost:5432/mikrocontrol"
 EnvironmentFile=/opt/mikrocontrol/backend/.env
 ExecStartPre=+/usr/bin/install -d -o www-data -g www-data /opt/mikrocontrol/backend/backups
+# El directorio static/logo ya existe (committed) y está bajo ghost, así que
+# install -d no cambia su dueño: lo forzamos a www-data para poder subir logo/favicon.
+ExecStartPre=+/bin/sh -c 'install -d /opt/mikrocontrol/backend/static/logo && chown www-data:www-data /opt/mikrocontrol/backend/static/logo'
 ExecStart=/opt/mikrocontrol/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001
 Restart=always
 RestartSec=5
