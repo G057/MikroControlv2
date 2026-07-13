@@ -1,6 +1,7 @@
 [Unit]
 Description=MikroControl Backend
-After=network.target
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
 
 [Service]
 Type=simple
