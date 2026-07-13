@@ -15,6 +15,9 @@ ExecStartPre=+/usr/bin/install -d -o www-data -g www-data /opt/mikrocontrol/back
 # El directorio static/logo ya existe (committed) y está bajo ghost, así que
 # install -d no cambia su dueño: lo forzamos a www-data para poder subir logo/favicon.
 ExecStartPre=+/bin/sh -c 'install -d /opt/mikrocontrol/backend/static/logo && chown www-data:www-data /opt/mikrocontrol/backend/static/logo'
+# Backups de configuración de routers (routeros_service.py escribe en la raíz del repo).
+# También existía bajo ghost tras el chown -R ghost, así que se fuerza a www-data.
+ExecStartPre=+/bin/sh -c 'install -d /opt/mikrocontrol/backups && chown www-data:www-data /opt/mikrocontrol/backups'
 ExecStart=/opt/mikrocontrol/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001
 Restart=always
 RestartSec=5
