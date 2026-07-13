@@ -1,12 +1,7 @@
 from pydantic import BaseModel, field_serializer
 from typing import Optional
 from datetime import datetime
-
-
-def _utc_iso(v: Optional[datetime]) -> Optional[str]:
-    if v is None:
-        return None
-    return v.isoformat() + "Z"
+from app.core.datetime_utils import utc_iso
 
 
 class TemplateCreate(BaseModel):
@@ -42,7 +37,7 @@ class TemplateResponse(BaseModel):
 
     @field_serializer('created_at', 'updated_at')
     def serialize_dt(self, v: Optional[datetime], _info):
-        return _utc_iso(v)
+        return utc_iso(v)
 
 
 class BackupResponse(BaseModel):
@@ -61,7 +56,7 @@ class BackupResponse(BaseModel):
 
     @field_serializer('created_at')
     def serialize_dt(self, v: Optional[datetime], _info):
-        return _utc_iso(v)
+        return utc_iso(v)
 
 
 class AlertRuleCreate(BaseModel):
@@ -90,7 +85,7 @@ class AlertRuleResponse(BaseModel):
 
     @field_serializer('created_at')
     def serialize_dt(self, v: Optional[datetime], _info):
-        return _utc_iso(v)
+        return utc_iso(v)
 
 
 class AlertResponse(BaseModel):
@@ -111,4 +106,4 @@ class AlertResponse(BaseModel):
 
     @field_serializer('created_at', 'resolved_at')
     def serialize_dt(self, v: Optional[datetime], _info):
-        return _utc_iso(v)
+        return utc_iso(v)

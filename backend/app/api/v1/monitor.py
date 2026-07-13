@@ -4,6 +4,7 @@ from sqlalchemy import func
 from app.core.database import get_db
 from app.core.security import get_current_user, require_permission
 from app.core.router_access import get_visible_router_ids
+from app.core.datetime_utils import utc_iso
 from app.models.user import User
 from app.models.router import Router
 from app.models.alert import Alert
@@ -45,7 +46,7 @@ def get_monitor(db: Session = Depends(get_db), current_user: User = Depends(requ
             "client_name": r.client_name,
             "is_online": r.is_online,
             "alert_count": alert_count,
-            "last_seen": r.last_seen.isoformat() + "Z" if r.last_seen else None,
+            "last_seen": utc_iso(r.last_seen),
             "group_id": r.group_id,
             "city": r.city,
         })

@@ -4,6 +4,7 @@ from sqlalchemy import func, desc, cast, String
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.router_access import get_visible_router_ids
+from app.core.datetime_utils import utc_iso
 from app.models.user import User
 from app.models.router import Router
 from app.models.alert import Alert
@@ -118,7 +119,7 @@ def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(ge
                 "action": log.action,
                 "resource_type": log.resource_type,
                 "resource_name": log.resource_name,
-                "timestamp": log.timestamp.isoformat() + "Z" if log.timestamp else None,
+                "timestamp": utc_iso(log.timestamp),
             }
             for log in recent_activity
         ],

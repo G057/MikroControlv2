@@ -5,6 +5,7 @@ from typing import Optional
 from datetime import datetime
 from app.core.database import get_db
 from app.core.security import require_permission
+from app.core.datetime_utils import utc_iso
 from app.models.user import User
 from app.models.audit import AuditLog
 from app.models.router_history import RouterHistory
@@ -70,7 +71,7 @@ def list_audit_logs(
                 "resource_name": log.resource_name,
                 "details": log.details,
                 "ip_address": log.ip_address,
-                "timestamp": log.timestamp.isoformat() + "Z" if log.timestamp else None,
+                "timestamp": utc_iso(log.timestamp),
             }
             for log in logs
         ],
@@ -187,7 +188,7 @@ def list_router_history(
                 "ros_time": e.ros_time,
                 "trace": e.trace,
                 "undoable": e.undoable,
-                "first_seen": e.first_seen.isoformat() + "Z" if e.first_seen else None,
+                "first_seen": utc_iso(e.first_seen),
             }
             for e in entries
         ],

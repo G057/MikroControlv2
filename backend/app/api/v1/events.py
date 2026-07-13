@@ -11,6 +11,7 @@ from app.models.alert import Alert
 from app.services.log_fetcher import fetch_all_logs
 from app.core import event_filter
 from app.core.router_access import get_visible_router_ids
+from app.core.datetime_utils import utc_iso
 from pydantic import BaseModel
 from typing import Optional
 
@@ -118,10 +119,10 @@ def _list_events(severity, topic, router_id, search, is_resolved, source, limit,
                 "time": a.created_at.strftime("%H:%M:%S") if a.created_at else "",
                 "topics": a.alert_type, "message": msg,
                 "severity": a.severity,
-                "created_at": a.created_at.isoformat() + "Z" if a.created_at else None,
+                "created_at": utc_iso(a.created_at),
                 "sort_time": sort_time,
                 "source": "health", "is_resolved": a.is_resolved,
-                "resolved_at": a.resolved_at.isoformat() + "Z" if a.resolved_at else None,
+                "resolved_at": utc_iso(a.resolved_at),
                 "resolved_by": a.resolved_by, "resolution_comment": getattr(a, 'resolution_comment', None),
             })
 
@@ -166,7 +167,7 @@ def _list_events(severity, topic, router_id, search, is_resolved, source, limit,
                         "topics": el.topics,
                         "message": el.message,
                         "severity": el.severity,
-                        "created_at": el.first_seen.isoformat() + "Z" if el.first_seen else None,
+                        "created_at": utc_iso(el.first_seen),
                         "sort_time": (el.first_seen - timedelta(hours=3)).strftime("%Y-%m-%dT") + el.ros_time if el.first_seen and el.ros_time else (el.first_seen.isoformat() if el.first_seen else None),
                         "source": "router",
                     })

@@ -13,6 +13,7 @@ from typing import Optional
 from datetime import datetime
 from urllib.parse import urlparse
 from app.core.database import get_db, engine, Base, SessionLocal, settings as db_settings
+from app.core.datetime_utils import utc_iso
 from app.core.security import require_permission, get_password_hash
 from app.core.crypto import encrypt_secret, decrypt_secret, is_encrypted
 from app.models.user import User
@@ -428,7 +429,7 @@ def list_operators(
         {
             "id": u.id, "username": u.username, "email": u.email,
             "full_name": u.full_name, "role": u.role, "is_active": u.is_active,
-            "last_login": u.last_login.isoformat() + "Z" if u.last_login else None,
+            "last_login": utc_iso(u.last_login),
         }
         for u in users
     ]

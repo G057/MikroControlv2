@@ -1,12 +1,7 @@
 from pydantic import BaseModel, field_serializer
 from typing import Optional
 from datetime import datetime
-
-
-def _utc_iso(v: Optional[datetime]) -> Optional[str]:
-    if v is None:
-        return None
-    return v.isoformat() + "Z"
+from app.core.datetime_utils import utc_iso
 
 
 class InventoryCreate(BaseModel):
@@ -58,4 +53,4 @@ class InventoryResponse(BaseModel):
 
     @field_serializer('created_at', 'updated_at')
     def serialize_dt(self, v: Optional[datetime], _info):
-        return _utc_iso(v)
+        return utc_iso(v)
