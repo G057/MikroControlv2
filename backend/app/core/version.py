@@ -1,5 +1,5 @@
 APP_NAME = "MikroControl"
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.5"
 APP_EDITION = "PostgreSQL"
 
 VERSION_INFO = {
