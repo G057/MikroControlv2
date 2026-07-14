@@ -14,6 +14,7 @@ PERMISSION_CATALOG = [
     # Dashboard
     ("dashboard:view", "Ver Dashboard", "Acceder al panel principal NOC", "Dashboard"),
     ("monitor:view", "Ver Monitor", "Acceder al panel de monitoreo en tiempo real", "Dashboard"),
+    ("monitor:mute", "Silenciar Alertas", "Silenciar popup de alertas críticas/warning en monitoreo", "Dashboard"),
     # Routers
     ("routers:details", "Ver Datos del Cliente", "Ver datos sensibles del cliente (teléfono, email, dirección, notas)", "Routers"),
     ("routers:edit", "Gestionar Routers", "Crear, editar y eliminar routers en el sistema", "Routers"),

@@ -151,6 +151,8 @@ export interface MonitorRouter {
   client_name: string | null;
   is_online: boolean;
   alert_count: number;
+  critical_count: number;
+  warning_count: number;
   last_seen: string | null;
   group_id: number | null;
   city: string | null;

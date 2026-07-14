@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -23,6 +23,8 @@ import {
   Monitor,
   ChevronDown,
   Filter,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 
 function timeAgo(iso: string | null): string {
@@ -48,7 +50,7 @@ const SIDEBAR_ITEMS = [
 
 export default function MonitorPage() {
   const { c, isDark, toggle: toggleTheme } = useTheme();
-  const { user, logout } = useAuth();
+  const { user, logout, hasPermission } = useAuth();
   const navigate = useNavigate();
 
   const [routers, setRouters] = useState<MonitorRouter[]>([]);
@@ -57,11 +59,75 @@ export default function MonitorPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [filterOpen, setFilterOpen] = useState(false);
+  const [newAlerts, setNewAlerts] = useState<{routers: string[]; critical: number; warning: number} | null>(null);
+  const [muted, setMuted] = useState(() => localStorage.getItem('monitor_mute') === 'true');
+  const mutedRef = useRef(muted);
+  mutedRef.current = muted;
+  const prevAlertsRef = useRef<Map<number, {critical: number; warning: number}>>(new Map());
+  const initializedRef = useRef(false);
+
+  const playAlertSound = useCallback(() => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.5, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.3);
+      // second pulse
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.type = 'sine';
+      osc2.frequency.value = 660;
+      gain2.gain.setValueAtTime(0.4, ctx.currentTime + 0.15);
+      gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+      osc2.start(ctx.currentTime + 0.15);
+      osc2.stop(ctx.currentTime + 0.5);
+    } catch {}
+  }, []);
 
   const fetchData = useCallback(async () => {
     try {
       const data = await monitorAPI.list();
       setRouters(data);
+
+      // detectar nuevas alertas críticas/warning
+      const prev = prevAlertsRef.current;
+      if (initializedRef.current) {
+        const newList: {name: string; critical: number; warning: number}[] = [];
+        for (const r of data) {
+          const p = prev.get(r.id);
+          if (p) {
+            const dc = (r.critical_count || 0) - (p.critical || 0);
+            const dw = (r.warning_count || 0) - (p.warning || 0);
+            if (dc > 0 || dw > 0) {
+              newList.push({name: r.name, critical: dc, warning: dw});
+            }
+          }
+        }
+        if (newList.length > 0 && !mutedRef.current) {
+          setNewAlerts({
+            routers: newList.map(x => x.name),
+            critical: newList.reduce((s, x) => s + x.critical, 0),
+            warning: newList.reduce((s, x) => s + x.warning, 0),
+          });
+          playAlertSound();
+        }
+      } else {
+        initializedRef.current = true;
+      }
+      // actualizar referencia
+      prev.clear();
+      for (const r of data) {
+        prev.set(r.id, {critical: r.critical_count || 0, warning: r.warning_count || 0});
+      }
     } catch {}
   }, []);
 
@@ -228,6 +294,11 @@ export default function MonitorPage() {
               </button>
             </div>
 
+            {hasPermission('monitor:mute') && (
+              <button onClick={() => { setMuted(!muted); localStorage.setItem('monitor_mute', String(!muted)); if (!muted) setNewAlerts(null); }} className="p-2 rounded-lg transition-colors" style={{ color: muted ? c.textMuted : c.accent }} title={muted ? 'Silencio activado' : 'Silenciar alertas'}>
+                {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+              </button>
+            )}
             <button onClick={toggleTheme} className="p-2 rounded-lg transition-colors" style={{ color: c.textMuted }} title={isDark ? 'Modo día' : 'Modo noche'}>
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
@@ -386,6 +457,36 @@ export default function MonitorPage() {
           )}
         </div>
       </div>
+
+      {/* Popup de alertas críticas/warning */}
+      {newAlerts && !mutedRef.current && (
+        <div className="fixed top-4 right-4 z-50 w-96 rounded-xl p-4 shadow-2xl animate-slide-down" style={{ background: c.bgCard, border: `1px solid ${newAlerts.critical > 0 ? c.red : c.yellow}` }}>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-semibold" style={{ color: c.textPrimary }}>
+              {newAlerts.critical > 0 ? '🔴 Nuevas Alertas Críticas' : '🟡 Nuevas Alertas'}
+            </h3>
+            <button onClick={() => setNewAlerts(null)} className="p-1 rounded-lg hover:opacity-70 transition-opacity" style={{ color: c.textMuted }}>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <p className="text-sm mb-2" style={{ color: c.textSecondary }}>
+            {newAlerts.critical} crítica(s), {newAlerts.warning} advertencia(s) en {newAlerts.routers.length} router(es):
+          </p>
+          <ul className="text-sm space-y-0.5 max-h-32 overflow-y-auto" style={{ color: c.textMuted }}>
+            {newAlerts.routers.slice(0, 8).map(name => <li key={name}>• {name}</li>)}
+            {newAlerts.routers.length > 8 && <li style={{ color: c.textMuted }}>... y {newAlerts.routers.length - 8} más</li>}
+          </ul>
+          {hasPermission('monitor:mute') && (
+            <button
+              onClick={() => { setMuted(true); localStorage.setItem('monitor_mute', 'true'); setNewAlerts(null); }}
+              className="mt-3 w-full py-1.5 rounded-lg text-sm font-medium transition-colors"
+              style={{ background: c.bgHover, color: c.textSecondary }}
+            >
+              Silenciar alertas
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
