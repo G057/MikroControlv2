@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import func, case
+from sqlalchemy import func
 from app.core.database import get_db
 from app.core.security import get_current_user, require_permission
 from app.core.router_access import get_visible_router_ids
@@ -10,6 +10,39 @@ from app.models.router import Router
 from app.models.alert import Alert
 
 router = APIRouter()
+
+
+def _alert_counts(db, visible_ids):
+    """Devuelve un dict {router_id: {total, critical, warning}}."""
+    base = db.query(Alert.router_id, func.count(Alert.id).label("total")).filter(
+        Alert.is_resolved == False, Alert.router_id.isnot(None)
+    )
+    if visible_ids is not None:
+        base = base.filter(Alert.router_id.in_(visible_ids))
+    base = base.group_by(Alert.router_id)
+
+    crit = db.query(Alert.router_id, func.count(Alert.id).label("critical")).filter(
+        Alert.is_resolved == False, Alert.router_id.isnot(None), Alert.severity == "critical"
+    )
+    if visible_ids is not None:
+        crit = crit.filter(Alert.router_id.in_(visible_ids))
+    crit = crit.group_by(Alert.router_id)
+
+    warn = db.query(Alert.router_id, func.count(Alert.id).label("warning")).filter(
+        Alert.is_resolved == False, Alert.router_id.isnot(None), Alert.severity == "warning"
+    )
+    if visible_ids is not None:
+        warn = warn.filter(Alert.router_id.in_(visible_ids))
+    warn = warn.group_by(Alert.router_id)
+
+    data = {}
+    for r_id, total in base.all():
+        data.setdefault(r_id, {})["total"] = total or 0
+    for r_id, c in crit.all():
+        data.setdefault(r_id, {})["critical"] = c or 0
+    for r_id, w in warn.all():
+        data.setdefault(r_id, {})["warning"] = w or 0
+    return data
 
 
 @router.get("/")
@@ -25,26 +58,7 @@ def get_monitor(db: Session = Depends(get_db), current_user: User = Depends(requ
         q = q.filter(Router.id.in_(visible_ids))
     routers = q.all()
 
-    alert_q = db.query(
-        Alert.router_id,
-        func.count(Alert.id).label("total"),
-        func.sum(case((Alert.severity == "critical", 1), else_=0)).label("critical"),
-        func.sum(case((Alert.severity == "warning", 1), else_=0)).label("warning"),
-    ).filter(
-        Alert.is_resolved == False,
-        Alert.router_id.isnot(None)
-    )
-    if visible_ids is not None:
-        alert_q = alert_q.filter(Alert.router_id.in_(visible_ids))
-    alert_q = alert_q.group_by(Alert.router_id)
-
-    alert_data = {}  # router_id -> {total, critical, warning}
-    for r_id, total, critical, warning in alert_q.all():
-        alert_data[r_id] = {
-            "total": total or 0,
-            "critical": critical or 0,
-            "warning": warning or 0,
-        }
+    alert_data = _alert_counts(db, visible_ids)
 
     result = []
     for r in routers:
@@ -54,9 +68,9 @@ def get_monitor(db: Session = Depends(get_db), current_user: User = Depends(requ
             "name": r.name,
             "client_name": r.client_name,
             "is_online": r.is_online,
-            "alert_count": ad["total"],
-            "critical_count": ad["critical"],
-            "warning_count": ad["warning"],
+            "alert_count": ad.get("total", 0),
+            "critical_count": ad.get("critical", 0),
+            "warning_count": ad.get("warning", 0),
             "last_seen": utc_iso(r.last_seen),
             "group_id": r.group_id,
             "city": r.city,
