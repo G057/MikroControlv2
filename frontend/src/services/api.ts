@@ -272,6 +272,12 @@ export interface SystemSettings {
   backup_interval_hours: string;
   backup_schedule_days: string;
   backup_schedule_time: string;
+  router_backup_interval_hours: string;
+  router_backup_schedule_days: string;
+  router_backup_schedule_time: string;
+  router_backup_type: string;
+  router_backup_retention_days: string;
+  router_backup_retention_count: string;
 }
 
 export interface OperatorUser {
