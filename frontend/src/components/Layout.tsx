@@ -8,7 +8,7 @@ import {
   Sun, Moon, Settings, Layers, Radio
 } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
-import { alertsAPI, logoAPI } from '../services/api';
+import { alertsAPI, logoAPI, versionAPI } from '../services/api';
 import { nowArgentina } from '../utils/date';
 
 type NavItem = { to: string; icon: any; label: string; permission: string | string[] };
@@ -51,6 +51,7 @@ export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [alertCount, setAlertCount] = useState(0);
   const [prevCritical, setPrevCritical] = useState(0);
+  const [appVersion, setAppVersion] = useState('');
 
   const showToast = async (msg: string) => {
     const { toast } = await import('react-hot-toast');
@@ -74,6 +75,10 @@ export default function Layout() {
     const iv = setInterval(fetchAlertCount, 15000);
     return () => clearInterval(iv);
   }, [fetchAlertCount]);
+
+  useEffect(() => {
+    versionAPI.get().then((v) => setAppVersion(`v${v.version}${v.edition ? ' · ' + v.edition : ''}`)).catch(() => {});
+  }, []);
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
@@ -151,6 +156,11 @@ export default function Layout() {
             <LogOut className="w-4 h-4" />
             Cerrar Sesión
           </button>
+          {appVersion && (
+            <p className="text-xs text-center mt-3 select-text" style={{ color: c.textMuted }}>
+              {appVersion}
+            </p>
+          )}
         </div>
       </aside>
 

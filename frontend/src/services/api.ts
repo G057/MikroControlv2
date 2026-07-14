@@ -40,6 +40,11 @@ export const authAPI = {
   logout: () => request<{ detail: string }>('/auth/logout', { method: 'POST' }),
 };
 
+// Version
+export const versionAPI = {
+  get: () => request<{ name: string; version: string; edition: string }>('/version'),
+};
+
 // Routers
 export const routersAPI = {
   list: (params?: { group_id?: number; search?: string; is_online?: boolean }) => {

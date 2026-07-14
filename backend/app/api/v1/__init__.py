@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1 import auth, users, routers_crud, groups, inventory, templates, backups, alerts, dashboard, routeros, audit, events, settings, dashboard_pref, roles, traffic, logo, monitor, system_backup
+from app.api.v1 import auth, users, routers_crud, groups, inventory, templates, backups, alerts, dashboard, routeros, audit, events, settings, dashboard_pref, roles, traffic, logo, monitor, system_backup, version
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -22,3 +22,4 @@ api_router.include_router(roles.router, prefix="/roles", tags=["Roles"])
 api_router.include_router(logo.router, prefix="/logo", tags=["Logo"])
 api_router.include_router(monitor.router, prefix="/monitor", tags=["Monitor"])
 api_router.include_router(system_backup.router, prefix="/system-backup", tags=["Backup Sistema"])
+api_router.include_router(version.router, prefix="/version", tags=["Versión"])
