@@ -153,6 +153,12 @@ class SettingsUpdate(BaseModel):
     backup_interval_hours: Optional[str] = None
     backup_schedule_days: Optional[str] = None
     backup_schedule_time: Optional[str] = None
+    router_backup_interval_hours: Optional[str] = None
+    router_backup_schedule_days: Optional[str] = None
+    router_backup_schedule_time: Optional[str] = None
+    router_backup_type: Optional[str] = None
+    router_backup_retention_days: Optional[str] = None
+    router_backup_retention_count: Optional[str] = None
 
 
 class UserCreate(BaseModel):

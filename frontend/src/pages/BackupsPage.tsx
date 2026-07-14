@@ -154,8 +154,11 @@ export default function BackupsPage() {
                     </div>
                   </div>
                   <div>
-                    <label className="text-xs font-medium block mb-1" style={{ color: c.textSecondary }}>Hora</label>
-                    <input type="time" value={cfg.router_backup_schedule_time} onChange={e => setCfg({...cfg, router_backup_schedule_time: e.target.value})}
+                    <label className="text-xs font-medium block mb-1" style={{ color: c.textSecondary }}>Hora (HH:MM, formato 24h)</label>
+                    <input type="text" value={cfg.router_backup_schedule_time} onChange={e => {
+                      const v = e.target.value;
+                      if (/^\d{0,2}:?\d{0,2}$/.test(v)) setCfg({...cfg, router_backup_schedule_time: v});
+                    }} placeholder="03:00"
                       className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={{ background: c.bgInput, color: c.textPrimary, border: `1px solid ${c.border}` }} />
                   </div>
                 </>
