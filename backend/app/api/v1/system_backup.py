@@ -1,4 +1,4 @@
-import os, glob, time, threading, subprocess, shutil
+import os, glob, time, threading, subprocess, shutil, logging
 from datetime import datetime
 from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException
@@ -7,7 +7,9 @@ from sqlalchemy import text
 from app.core.database import get_db, engine, settings
 from app.core.security import get_current_user, require_permission
 from app.models.user import User
-from app.api.v1.settings import get_setting, _set
+from app.api.v1.settings import get_setting, _set, DEFAULTS
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -80,6 +82,7 @@ def _do_create_backup() -> dict:
         raise HTTPException(status_code=500, detail="pg_dump no encontrado. Instalá PostgreSQL client.")
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Error al generar backup: {e.stderr.decode(errors='ignore')[:300]}")
+    _cleanup_old_backups()
     return {"filename": fname, "size": os.path.getsize(dest), "message": "Backup creado exitosamente"}
 
 
@@ -171,6 +174,10 @@ def delete_backups_bulk(data: dict, current_user: User = Depends(require_permiss
 BACKUP_INTERVAL_KEY = "backup_interval_hours"
 BACKUP_SCHEDULE_DAYS_KEY = "backup_schedule_days"
 BACKUP_SCHEDULE_TIME_KEY = "backup_schedule_time"
+BACKUP_RETENTION_DAYS_KEY = "backup_retention_days"
+BACKUP_RETENTION_COUNT_KEY = "backup_retention_count"
+DEFAULT_RETENTION_DAYS = 30
+DEFAULT_RETENTION_COUNT = 60
 _backup_scheduler_active = False
 
 
@@ -193,6 +200,51 @@ def _should_run_scheduled(days_str: str, time_str: str) -> bool:
     return True
 
 
+def _cleanup_old_backups():
+    """Elimina dumps antiguos según retención por edad y por cantidad máxima."""
+    try:
+        from app.core.database import SessionLocal
+        db = SessionLocal()
+        try:
+            days = int(get_setting(db, BACKUP_RETENTION_DAYS_KEY, str(DEFAULT_RETENTION_DAYS)))
+            count = int(get_setting(db, BACKUP_RETENTION_COUNT_KEY, str(DEFAULT_RETENTION_COUNT)))
+        finally:
+            db.close()
+    except Exception:
+        days = DEFAULT_RETENTION_DAYS
+        count = DEFAULT_RETENTION_COUNT
+
+    if days <= 0 and count <= 0:
+        return
+
+    _ensure_backup_dir()
+    files = glob.glob(os.path.join(BACKUP_DIR, "*.dump")) + glob.glob(os.path.join(BACKUP_DIR, "*.sql"))
+    files = [f for f in files if os.path.isfile(f)]
+    if not files:
+        return
+    files.sort(key=os.path.getmtime)
+
+    now_ts = time.time()
+    if days > 0:
+        cutoff = now_ts - days * 86400
+        for f in list(files):
+            if os.path.getmtime(f) < cutoff:
+                try:
+                    os.remove(f)
+                    files.remove(f)
+                    logger.info("Backup antiguo eliminado (retención %sd): %s", days, os.path.basename(f))
+                except OSError as e:
+                    logger.warning("No se pudo eliminar %s: %s", f, e)
+
+    if count > 0 and len(files) > count:
+        for f in files[:len(files) - count]:
+            try:
+                os.remove(f)
+                logger.info("Backup antiguo eliminado (máx %s): %s", count, os.path.basename(f))
+            except OSError as e:
+                logger.warning("No se pudo eliminar %s: %s", f, e)
+
+
 def _backup_scheduler_loop():
     global _backup_scheduler_active
     _backup_scheduler_active = True
@@ -202,7 +254,7 @@ def _backup_scheduler_loop():
         try:
             from app.core.database import SessionLocal
             db = SessionLocal()
-            interval = int(get_setting(db, BACKUP_INTERVAL_KEY, "0"))
+            interval = int(get_setting(db, BACKUP_INTERVAL_KEY, DEFAULTS.get(BACKUP_INTERVAL_KEY, "6")))
             days = get_setting(db, BACKUP_SCHEDULE_DAYS_KEY, "")
             sched_time = get_setting(db, BACKUP_SCHEDULE_TIME_KEY, "03:00")
             db.close()
