@@ -19,6 +19,7 @@ import BulkCommandPage from './pages/BulkCommandPage';
 import SystemSettingsPage from './pages/SystemSettingsPage';
 import RolesPage from './pages/RolesPage';
 import MonitorPage from './pages/MonitorPage';
+import WizardPage from './pages/WizardPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -83,6 +84,7 @@ function AppRoutes() {
         <Route path="terminal" element={<RequirePermission permission="routers:terminal"><TerminalPage /></RequirePermission>} />
         <Route path="bulk-command" element={<RequirePermission permission="routers:bulk_command"><BulkCommandPage /></RequirePermission>} />
         <Route path="settings" element={<RequirePermission permission="settings:view"><SystemSettingsPage /></RequirePermission>} />
+        <Route path="wizard" element={<RequirePermission permission="routers:configure_wan"><WizardPage /></RequirePermission>} />
       </Route>
     </Routes>
   );

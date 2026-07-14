@@ -113,6 +113,17 @@ class BulkCommandResponse(BaseModel):
     results: List[BulkCommandItem]
 
 
+class WanConfigureRequest(BaseModel):
+    router_id: int
+    wan_interface: str
+    wan_type: str  # "pppoe", "static", "dhcp"
+    pppoe_user: Optional[str] = None
+    pppoe_password: Optional[str] = None
+    ip_address: Optional[str] = None  # "192.168.1.2/24"
+    gateway: Optional[str] = None
+    dns_servers: Optional[str] = None  # "8.8.8.8,1.1.1.1"
+
+
 class TestConnectionRequest(BaseModel):
     hostname: str
     port: int = 8728
@@ -452,3 +463,35 @@ def get_config_section(
         return _cmd(r, SECTION_MAP[section])
     except Exception as e:
         return []
+
+
+@router.get("/wan/{router_id}")
+def get_wan_config(
+    router_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("routers:configure_wan")),
+):
+    r = require_visible_router(router_id, current_user, db)
+    from app.services.routeros_service import get_wan_config as _get_wan
+    return _get_wan(r)
+
+
+@router.post("/wan/configure")
+def configure_wan(
+    data: WanConfigureRequest,
+    req: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("routers:configure_wan")),
+):
+    r = require_visible_router(data.router_id, current_user, db)
+    from app.services.routeros_service import configure_wan as _cfg_wan
+    result = _cfg_wan(r, data.wan_interface, data.wan_type,
+                      pppoe_user=data.pppoe_user, pppoe_password=data.pppoe_password,
+                      ip_address=data.ip_address, gateway=data.gateway,
+                      dns_servers=data.dns_servers)
+    if result.get("success"):
+        log_audit(db, current_user.username, "update", "router",
+                  r.id, r.name, {"action": "configure_wan", "wan_type": data.wan_type},
+                  current_user.id, req.client.host if req.client else None)
+        db.commit()
+    return result

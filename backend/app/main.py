@@ -128,6 +128,9 @@ def on_startup():
     from app.services.history_fetcher import start_history_fetcher
     start_history_fetcher()
 
+    from app.services.router_backup_scheduler import start_router_backup_scheduler
+    start_router_backup_scheduler()
+
     from app.services.traffic_sampler import start_traffic_sampler
     start_traffic_sampler()
 

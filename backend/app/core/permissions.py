@@ -22,6 +22,7 @@ PERMISSION_CATALOG = [
     ("routers:bulk_command", "Comandos en Lote", "Ejecutar un comando en varios routers a la vez", "Routers"),
     ("routers:backup", "Gestionar Backups", "Crear y restaurar backups de routers", "Routers"),
     ("routers:ping", "Ping desde Router", "Ejecutar ping desde el router hacia una IP", "Routers"),
+    ("routers:configure_wan", "Configurar WAN", "Configurar interfaz WAN (PPPoE/IP fija/DHCP)", "Routers"),
     # Vista por sección (granular): seleccionar qué puede ver cada rol
     ("routers:view_sensitive", "Ver Datos Técnicos", "Ver IP, hostname, identidad, MAC, serial y modelo del router", "Vista Router"),
     ("routers:view_interfaces", "Ver Interfaces", "Ver pestaña Interfaces del router", "Vista Router"),

@@ -139,6 +139,27 @@ export const routerosAPI = {
   firewall: (router_id: number) => request(`/routeros/firewall/${router_id}`),
   wireguard: (router_id: number) => request(`/routeros/wireguard/${router_id}`),
   configSection: (router_id: number, section: string) => request<any[]>(`/routeros/config/${router_id}/${section}`),
+  wanConfig: (router_id: number) => request<{
+    interfaces: { name: string; type: string; running: boolean }[];
+    addresses: { interface: string; address: string; network: string }[];
+    dhcp_clients: { interface: string; status: string; dhcp_server?: string; address?: string }[];
+    pppoe_clients: { name: string; interface: string; status: string; user: string }[];
+    dns_servers: string;
+    gateway: string;
+  }>(`/routeros/wan/${router_id}`),
+  configureWan: (data: {
+    router_id: number;
+    wan_interface: string;
+    wan_type: string;
+    pppoe_user?: string;
+    pppoe_password?: string;
+    ip_address?: string;
+    gateway?: string;
+    dns_servers?: string;
+  }) => request<{ success: boolean; message?: string; error?: string }>('/routeros/wan/configure', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
 };
 
 // Traffic (per-interface time-series)

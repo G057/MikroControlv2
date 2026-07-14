@@ -59,6 +59,12 @@ DEFAULTS = {
     "backup_interval_hours": "6",
     "backup_schedule_days": "",
     "backup_schedule_time": "03:00",
+    "router_backup_interval_hours": "6",
+    "router_backup_schedule_days": "",
+    "router_backup_schedule_time": "03:00",
+    "router_backup_type": "export",
+    "router_backup_retention_days": "30",
+    "router_backup_retention_count": "60",
 }
 
 # Claves cuyo valor es un secreto: se cifran en reposo y se enmascaran al leer.

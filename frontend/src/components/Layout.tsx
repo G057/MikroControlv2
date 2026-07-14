@@ -5,7 +5,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import {
   LayoutDashboard, Server, Users, Bell,
   HardDrive, ClipboardList, Terminal, LogOut, Shield, Menu, X, Network,
-  Sun, Moon, Settings, Layers, Radio
+  Sun, Moon, Settings, Layers, Radio, Wrench
 } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { alertsAPI, logoAPI, versionAPI } from '../services/api';
@@ -26,6 +26,12 @@ const navGroups: { label?: string; items: NavNode[] }[] = [
       { to: '/backups', icon: HardDrive, label: 'Backups', permission: 'routers:backup' },
       { to: '/events', icon: Bell, label: 'Eventos', permission: 'events:view' },
       { to: '/audit', icon: ClipboardList, label: 'Auditoría', permission: 'audit:view' },
+    ],
+  },
+    {
+    label: 'Herramientas',
+    items: [
+      { to: '/wizard', icon: Wrench, label: 'Configurador', permission: 'routers:configure_wan' },
     ],
   },
   {

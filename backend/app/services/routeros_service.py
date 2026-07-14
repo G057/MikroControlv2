@@ -779,3 +779,102 @@ def create_router_backup(router, backup_type="binary"):
         return {"success": True, "filename": filename}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+def get_wan_interfaces(router) -> list:
+    conn = _get_connection(router)
+    conn.connect()
+    try:
+        interfaces = conn.command("/interface/print")
+        conn.close()
+        return [{"name": i.get("name"), "type": i.get("type"), "running": i.get("running") == "true"}
+                for i in interfaces if i.get("type") in ("ether", "wlan", "wifi", "bridge")]
+    except Exception as e:
+        try: conn.close()
+        except: pass
+        raise
+
+
+def get_wan_config(router) -> dict:
+    conn = _get_connection(router)
+    conn.connect()
+    try:
+        interfaces = conn.command("/interface/print")
+        addresses = conn.command("/ip/address/print")
+        dhcp_clients = conn.command("/ip/dhcp-client/print")
+        pppoe_clients = conn.command("/interface/pppoe-client/print")
+        dns = conn.command("/ip/dns/print")
+        routes = conn.command("/ip/route/print")
+        conn.close()
+
+        wan_ifaces = [{"name": i.get("name"), "type": i.get("type"), "running": i.get("running") == "true"}
+                      for i in interfaces if i.get("type") in ("ether", "wlan", "wifi", "bridge")]
+
+        return {
+            "interfaces": wan_ifaces,
+            "addresses": [{"interface": a.get("interface"), "address": a.get("address"), "network": a.get("network")} for a in addresses],
+            "dhcp_clients": [{"interface": d.get("interface"), "status": d.get("status"), "dhcp_server": d.get("dhcp-server"), "address": d.get("address")} for d in dhcp_clients],
+            "pppoe_clients": [{"name": p.get("name"), "interface": p.get("interface"), "status": p.get("status"), "user": p.get("user")} for p in pppoe_clients],
+            "dns_servers": dns[0].get("servers", "") if dns else "",
+            "gateway": next((r.get("gateway", "") for r in routes if r.get("dst-address") == "0.0.0.0/0"), ""),
+        }
+    except Exception as e:
+        try: conn.close()
+        except: pass
+        raise
+
+
+def configure_wan(router, wan_interface: str, wan_type: str, **kwargs) -> dict:
+    conn = _get_connection(router)
+    conn.connect()
+    try:
+        if wan_type == "dhcp":
+            for d in conn.command("/ip/dhcp-client/print"):
+                if d.get("interface") == wan_interface and ".id" in d:
+                    conn.command(f"/ip/dhcp-client/remove =.id={d['.id']}")
+            for a in conn.command("/ip/address/print"):
+                if a.get("interface") == wan_interface and ".id" in a:
+                    conn.command(f"/ip/address/remove =.id={a['.id']}")
+            conn.command(f"/ip/dhcp-client/add =interface={wan_interface} =disabled=no")
+
+        elif wan_type == "pppoe":
+            user = kwargs.get("pppoe_user", "")
+            password = kwargs.get("pppoe_password", "")
+            for p in conn.command("/interface/pppoe-client/print"):
+                if (p.get("interface") == wan_interface or p.get("name") == "pppoe-wan") and ".id" in p:
+                    conn.command(f"/interface/pppoe-client/remove =.id={p['.id']}")
+            for d in conn.command("/ip/dhcp-client/print"):
+                if d.get("interface") == "pppoe-wan" and ".id" in d:
+                    conn.command(f"/ip/dhcp-client/remove =.id={d['.id']}")
+            conn.command(f"/interface/pppoe-client/add =name=pppoe-wan =interface={wan_interface} =user={user} =password={password} =disabled=no")
+            conn.command("/ip/dhcp-client/add =interface=pppoe-wan =disabled=no")
+
+        elif wan_type == "static":
+            ip_address = kwargs.get("ip_address", "")
+            gateway = kwargs.get("gateway", "")
+            dns_servers = kwargs.get("dns_servers", "")
+            for d in conn.command("/ip/dhcp-client/print"):
+                if d.get("interface") == wan_interface and ".id" in d:
+                    conn.command(f"/ip/dhcp-client/remove =.id={d['.id']}")
+            for a in conn.command("/ip/address/print"):
+                if a.get("interface") == wan_interface and ".id" in a:
+                    conn.command(f"/ip/address/remove =.id={a['.id']}")
+            for r in conn.command("/ip/route/print"):
+                if r.get("dst-address") == "0.0.0.0/0" and ".id" in r:
+                    conn.command(f"/ip/route/remove =.id={r['.id']}")
+            if ip_address:
+                conn.command(f"/ip/address/add =address={ip_address} =interface={wan_interface}")
+            if gateway:
+                conn.command(f"/ip/route/add =dst-address=0.0.0.0/0 =gateway={gateway}")
+            if dns_servers:
+                conn.command(f"/ip/dns/set =servers={dns_servers}")
+
+        else:
+            raise ValueError(f"Tipo WAN inválido: {wan_type}")
+
+        conn.close()
+        return {"success": True, "message": f"Configuración WAN ({wan_type}) aplicada en {wan_interface}"}
+    except Exception as e:
+        try: conn.close()
+        except: pass
+        return {"success": False, "error": str(e)}
