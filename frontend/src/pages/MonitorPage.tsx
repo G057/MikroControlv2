@@ -59,7 +59,7 @@ export default function MonitorPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [filterOpen, setFilterOpen] = useState(false);
-  const [alertPopups, setAlertPopups] = useState<{id: number; routerName: string; critical: number; warning: number}[]>([]);
+  const [alertPopups, setAlertPopups] = useState<{id: number; routerName: string; critical: number; warning: number; time: string}[]>([]);
   const [muted, setMuted] = useState(() => localStorage.getItem('monitor_mute') === 'true');
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
@@ -109,13 +109,15 @@ export default function MonitorPage() {
       setRouters(resp.routers);
 
       if (!isFirst) {
-        const fresh: {id: number; routerName: string; critical: number; warning: number}[] = [];
+        const now = new Date();
+        const timeStr = now.toLocaleDateString() + ' ' + now.toLocaleTimeString();
+        const fresh: {id: number; routerName: string; critical: number; warning: number; time: string}[] = [];
         for (const r of resp.routers) {
           const nc = r.new_critical_events || 0;
           const nw = r.new_warning_events || 0;
           if (nc > 0 || nw > 0) {
             popupIdRef.current += 1;
-            fresh.push({id: popupIdRef.current, routerName: r.name, critical: nc, warning: nw});
+            fresh.push({id: popupIdRef.current, routerName: r.name, critical: nc, warning: nw, time: timeStr});
           }
         }
         if (fresh.length > 0 && !mutedRef.current) {
@@ -459,7 +461,7 @@ export default function MonitorPage() {
         <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-h-[80vh] overflow-y-auto" style={{ maxWidth: 384, scrollbarWidth: 'thin' }}>
           {alertPopups.filter(p => !mutedRef.current).map(p => (
             <div key={p.id} className="w-96 rounded-xl p-4 shadow-2xl animate-slide-down flex-shrink-0" style={{ background: c.bgCard, border: `1px solid ${p.critical > 0 ? c.red : c.yellow}` }}>
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-1">
                 <h3 className="font-semibold truncate" style={{ color: c.textPrimary }}>
                   {p.critical > 0 ? '🔴 ' : '🟡 '}{p.routerName}
                 </h3>
@@ -467,6 +469,7 @@ export default function MonitorPage() {
                   <X className="w-4 h-4" />
                 </button>
               </div>
+              <p className="text-[11px] mb-1 font-mono" style={{ color: c.textMuted }}>{p.time}</p>
               <p className="text-sm" style={{ color: c.textSecondary }}>
                 {p.critical > 0 ? `${p.critical} crítica(s)` : ''}
                 {p.critical > 0 && p.warning > 0 ? ', ' : ''}
