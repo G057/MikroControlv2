@@ -162,8 +162,7 @@ export interface MonitorRouter {
 
 export interface MonitorResponse {
   routers: MonitorRouter[];
-  max_critical_log_id: number;
-  max_warning_log_id: number;
+  max_event_log_id: number;
 }
 
 export interface DashboardData {

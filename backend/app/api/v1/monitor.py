@@ -1,5 +1,3 @@
-from typing import Optional
-
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -48,32 +46,25 @@ def _alert_counts(db, visible_ids):
     return data
 
 
-def _new_event_counts(db, visible_ids, since_crit, since_warn):
-    """Cuenta EventLog con id > since_* por router. Retorna {router_id: {critical, warning}}."""
+def _new_event_counts(db, visible_ids, since_id):
+    """Cuenta EventLog con id > since_id, por router y severidad."""
     data = {}
-    if since_crit is not None:
+    if since_id is None:
+        return data
+    for sev in ("critical", "warning"):
         q = db.query(EventLog.router_id, func.count(EventLog.id)).filter(
-            EventLog.severity == "critical", EventLog.id > since_crit
+            EventLog.severity == sev, EventLog.id > since_id
         )
         if visible_ids is not None:
             q = q.filter(EventLog.router_id.in_(visible_ids))
         for r_id, cnt in q.group_by(EventLog.router_id).all():
-            data.setdefault(r_id, {})["critical"] = cnt
-    if since_warn is not None:
-        q = db.query(EventLog.router_id, func.count(EventLog.id)).filter(
-            EventLog.severity == "warning", EventLog.id > since_warn
-        )
-        if visible_ids is not None:
-            q = q.filter(EventLog.router_id.in_(visible_ids))
-        for r_id, cnt in q.group_by(EventLog.router_id).all():
-            data.setdefault(r_id, {})["warning"] = cnt
+            data.setdefault(r_id, {})[sev] = cnt
     return data
 
 
 @router.get("/")
 def get_monitor(
-    since_critical_log_id: Optional[int] = Query(None),
-    since_warning_log_id: Optional[int] = Query(None),
+    since_event_log_id: int = Query(0),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("monitor:view")),
 ):
@@ -89,11 +80,9 @@ def get_monitor(
     routers = q.all()
 
     alert_data = _alert_counts(db, visible_ids)
-    new_data = _new_event_counts(db, visible_ids, since_critical_log_id, since_warning_log_id)
+    new_data = _new_event_counts(db, visible_ids, since_event_log_id)
 
-    # Global max IDs for next since_* params
-    global_max_crit = db.query(func.max(EventLog.id)).filter(EventLog.severity == "critical").scalar() or 0
-    global_max_warn = db.query(func.max(EventLog.id)).filter(EventLog.severity == "warning").scalar() or 0
+    max_event_log_id = db.query(func.max(EventLog.id)).scalar() or 0
 
     result = []
     for r in routers:
@@ -116,6 +105,5 @@ def get_monitor(
 
     return {
         "routers": result,
-        "max_critical_log_id": global_max_crit,
-        "max_warning_log_id": global_max_warn,
+        "max_event_log_id": max_event_log_id,
     }

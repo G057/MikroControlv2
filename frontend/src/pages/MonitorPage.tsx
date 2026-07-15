@@ -63,8 +63,7 @@ export default function MonitorPage() {
   const [muted, setMuted] = useState(() => localStorage.getItem('monitor_mute') === 'true');
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
-  const sinceCritRef = useRef<number>(0);
-  const sinceWarnRef = useRef<number>(0);
+  const sinceEventLogRef = useRef<number>(0);
   const initializedRef = useRef(false);
 
   const playAlertSound = useCallback(() => {
@@ -96,14 +95,10 @@ export default function MonitorPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const resp = await monitorAPI.list({
-        since_critical_log_id: sinceCritRef.current || undefined,
-        since_warning_log_id: sinceWarnRef.current || undefined,
-      });
+      const resp = await monitorAPI.list(sinceEventLogRef.current || undefined);
       const data: MonitorRouter[] = resp.routers;
       setRouters(data);
 
-      // detectar nuevas alertas críticas/warning (counts del backend)
       if (initializedRef.current) {
         const newList: {name: string; critical: number; warning: number}[] = [];
         for (const r of data) {
@@ -124,9 +119,7 @@ export default function MonitorPage() {
       } else {
         initializedRef.current = true;
       }
-      // actualizar global since IDs
-      if (resp.max_critical_log_id > 0) sinceCritRef.current = resp.max_critical_log_id;
-      if (resp.max_warning_log_id > 0) sinceWarnRef.current = resp.max_warning_log_id;
+      if (resp.max_event_log_id > 0) sinceEventLogRef.current = resp.max_event_log_id;
     } catch {}
   }, []);
 
