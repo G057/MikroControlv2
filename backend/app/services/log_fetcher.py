@@ -47,15 +47,21 @@ SEVERITY_MAP = {
 }
 
 
-def _ros_time_to_seconds(ros_time: str) -> int:
-    """Convierte HH:MM:SS a segundos del día. Retorna 0 si no puede parsear."""
+def _ros_time_to_seconds(ros_time: str):
+    """Convierte HH:MM:SS (o formatos RouterOS) a segundos del día. Retorna None si no puede parsear."""
     try:
-        parts = ros_time.strip().split(":")
-        if len(parts) == 3:
-            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-    except (ValueError, IndexError):
+        t = ros_time.strip()
+        # RouterOS puede anteponer "jan/14 " o "1d" antes de la hora
+        for sep in (" ", "/", "-"):
+            if sep in t and t.index(sep) < t.rindex(":"):
+                t = t.split(sep)[-1]
+        parts = t.split(":")
+        if len(parts) >= 3:
+            h, m, s = int(parts[-3]), int(parts[-2]), int(parts[-1])
+            return h * 3600 + m * 60 + s
+    except (ValueError, IndexError, AttributeError):
         pass
-    return 0
+    return None
 
 
 def _classify_severity(topics: str) -> str:
@@ -157,11 +163,11 @@ def fetch_router_logs(db, router: Router) -> int:
             interval = int(get_setting(db, "log_fetch_interval", "60"))
             max_age = interval * 2
             log_secs = _ros_time_to_seconds(ros_time)
-            now_secs = (datetime.now().hour * 3600 + datetime.now().minute * 60 + datetime.now().second)
-            age = (now_secs - log_secs) % 86400  # maneja cruce de medianoche
-            is_recent = age <= max_age
-            if not is_recent:
-                continue
+            if log_secs is not None:
+                now_secs = (datetime.now().hour * 3600 + datetime.now().minute * 60 + datetime.now().second)
+                age = (now_secs - log_secs) % 86400  # maneja cruce de medianoche
+                if age > max_age:
+                    continue
             alert_type = "log_warning" if severity == "warning" else "log_critical"
             created = _create_alert(db, router.id, alert_type, severity,
                                     f"{router.name}: {severity}",
