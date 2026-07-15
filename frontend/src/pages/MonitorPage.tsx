@@ -135,7 +135,9 @@ export default function MonitorPage() {
         notificationCursorRef.current = batch.nextCursor;
         const fresh = batch.items.filter(item => !receivedNotificationIds.current.has(item.id));
         fresh.forEach(item => receivedNotificationIds.current.add(item.id));
-        const displayable = isFirst ? fresh.filter(item => item.severity === 'critical') : fresh;
+        // The first load intentionally excludes acknowledged history, but pending
+        // notifications still require delivery after a reload or brief disconnect.
+        const displayable = fresh;
         if (!popupsPaused && displayable.length) {
           setAlertPopups(prev => {
             const critical = [...prev.filter(item => item.severity === 'critical'), ...fresh.filter(item => item.popupRequired && item.severity === 'critical')];
