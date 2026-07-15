@@ -1,10 +1,12 @@
 import threading
 import logging
+import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from app.core.database import SessionLocal
 from app.models.router import Router
 from app.models.alert import Alert
+from app.models.event_log import EventLog
 
 logger = logging.getLogger(__name__)
 
@@ -151,10 +153,40 @@ def _apply_online(db, router, now, resources, health):
 
         # Notificación informativa de reconexión (ya resuelta: no es un
         # problema activo, no debe contar como alerta abierta).
+        _create_event_log(db, router, "info", "router_online",
+                          f"{router.name} se reconectó")
         _create_alert(db, router.id, "router_online", "info",
                       f"{router.name} se reconectó",
                       f"El router {router.name} está nuevamente en línea",
                       resolved=True)
+
+
+def _make_event_hash(router_id, alert_type, message):
+    raw = f"health|{router_id}|{alert_type}|{message}"
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def _create_event_log(db, router, severity, alert_type, message):
+    now = datetime.now(timezone.utc)
+    content_hash = _make_event_hash(router.id, alert_type, message)
+    existing = db.query(EventLog).filter(EventLog.content_hash == content_hash).first()
+    if existing:
+        existing.last_seen = now
+        return
+    event = EventLog(
+        router_id=router.id,
+        router_name=router.name,
+        ros_time=now.strftime("%H:%M:%S"),
+        topics=f"health,{severity}",
+        message=message[:500],
+        severity=severity,
+        content_hash=content_hash,
+    )
+    db.add(event)
+    try:
+        db.flush()
+    except Exception:
+        db.rollback()
 
 
 def _handle_offline(db, router, now, error_msg):
@@ -163,6 +195,8 @@ def _handle_offline(db, router, now, error_msg):
     router.last_seen = now
 
     if was_online:
+        _create_event_log(db, router, "critical", "router_offline",
+                          f"{router.name} se desconectó. {error_msg}")
         _create_alert(db, router.id, "router_offline", "critical",
                       f"{router.name} se desconectó",
                       f"El router {router.name} dejó de responder. Error: {error_msg}")
@@ -173,6 +207,8 @@ def _handle_offline(db, router, now, error_msg):
             Alert.is_resolved == False,
         ).first()
         if not existing:
+            _create_event_log(db, router, "critical", "router_offline",
+                              f"{router.name} offline. {error_msg}")
             _create_alert(db, router.id, "router_offline", "critical",
                           f"{router.name} offline",
                           f"El router {router.name} no responde. Error: {error_msg}")

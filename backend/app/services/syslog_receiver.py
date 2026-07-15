@@ -191,14 +191,20 @@ def _handle_message(msg_bytes: bytes):
 
 
 def _run_syslog_server():
-    port = 5140
+    from app.api.v1.settings import get_interval, get_setting as _get_setting
+
+    def _is_enabled():
+        db = SessionLocal()
+        try:
+            return _get_setting(db, "syslog_enabled", "false") == "true"
+        except Exception:
+            return False
+        finally:
+            db.close()
+
+    port = get_interval("syslog_port", 5140)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    try:
-        from app.api.v1.settings import get_interval
-        port = get_interval("syslog_port", 5140)
-    except Exception:
-        pass
     try:
         sock.bind(("0.0.0.0", port))
     except OSError as e:
@@ -207,13 +213,20 @@ def _run_syslog_server():
         return
 
     logger.info(f" Syslog receiver escuchando en UDP {port}")
-    sock.settimeout(1.0)
+    sock.settimeout(3.0)
+    _last_setting_check = time.time()
     while not _stop_event.is_set():
         try:
             data, addr = sock.recvfrom(4096)
             if data:
                 _handle_message(data)
         except socket.timeout:
+            now = time.time()
+            if now - _last_setting_check > 60:
+                _last_setting_check = now
+                if not _is_enabled():
+                    logger.info("Syslog receiver disabled via runtime setting change")
+                    break
             continue
         except Exception as e:
             logger.error(f"Error en syslog socket: {e}")
