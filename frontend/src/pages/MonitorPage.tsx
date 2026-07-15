@@ -137,6 +137,13 @@ export default function MonitorPage() {
     return () => clearInterval(iv);
   }, [fetchData]);
 
+  // auto-dismiss popup tras 8s
+  useEffect(() => {
+    if (!newAlerts) return;
+    const t = setTimeout(() => setNewAlerts(null), 8000);
+    return () => clearTimeout(t);
+  }, [newAlerts]);
+
   const filteredRouters = useMemo(() => {
     return routers.filter(r => {
       if (statusFilter === 'online' && (!r.is_online || r.alert_count > 0)) return false;
