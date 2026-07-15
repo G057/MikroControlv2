@@ -491,14 +491,26 @@ export default function MonitorPage() {
                 <h3 className="font-semibold truncate" style={{ color: c.textPrimary }}>
                   {p.severity === 'critical' ? 'Critica: ' : 'Advertencia: '}{p.title}
                 </h3>
-                <button onClick={() => { setAlertPopups(prev => prev.filter(x => x.id !== p.id)); void monitorAPI.acknowledge(p.id); }} className="p-1 rounded-lg hover:opacity-70 transition-opacity flex-shrink-0" style={{ color: c.textMuted }}>
-                  <X className="w-4 h-4" />
-                </button>
+                {p.severity !== 'critical' && (
+                  <button onClick={() => { setAlertPopups(prev => prev.filter(x => x.id !== p.id)); void monitorAPI.acknowledge(p.id); }} className="p-1 rounded-lg hover:opacity-70 transition-opacity flex-shrink-0" style={{ color: c.textMuted }} title="Cerrar">
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
               <p className="text-[11px] mb-1 font-mono" style={{ color: c.textMuted }}>{p.createdAt ? new Date(p.createdAt).toLocaleString() : ''}</p>
               <p className="text-sm" style={{ color: c.textSecondary }}>
                 {p.message}{p.occurrenceCount > 1 ? ` (${p.occurrenceCount} ocurrencias)` : ''}
               </p>
+              {p.severity === 'critical' && (
+                <button onClick={async () => {
+                  try {
+                    await monitorAPI.acknowledge(p.id);
+                    setAlertPopups(prev => prev.filter(item => item.id !== p.id));
+                  } catch (error) { console.warn('Notification acknowledgement failed', error); }
+                }} className="mt-3 px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: c.redBg, color: c.red }}>
+                  Reconocer alerta
+                </button>
+              )}
             </div>
           ))}
         </div>

@@ -24,7 +24,7 @@ def get_notifications(
     current_user: User = Depends(require_permission("monitor:view")),
 ):
     visible_ids = get_visible_router_ids(current_user, db)
-    q = db.query(Notification).filter(Notification.id > after_id)
+    q = db.query(Notification).filter(Notification.id > after_id, Notification.status != "acknowledged")
     if visible_ids is not None:
         q = q.filter((Notification.router_id.is_(None)) | (Notification.router_id.in_(visible_ids)))
     rows = q.order_by(Notification.id.asc()).limit(limit + 1).all()
