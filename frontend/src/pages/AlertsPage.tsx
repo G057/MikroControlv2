@@ -82,10 +82,11 @@ export default function EventsPage() {
       const params: any = { limit: 500 };
       if (severityFilter === 'unresolved') {
         params.is_resolved = false;
+        params.source = 'health';
       } else if (severityFilter !== 'all') {
         params.severity = severityFilter;
       }
-      if (sourceFilter !== 'all') params.source = sourceFilter;
+      if (sourceFilter !== 'all' && severityFilter !== 'unresolved') params.source = sourceFilter;
       if (routerFilter) params.router_id = routerFilter;
       if (search.trim()) params.search = search.trim();
       const data = await eventsAPI.list(params);
