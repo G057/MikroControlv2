@@ -567,8 +567,6 @@ function MonitoringTab({ settings, onSave, c }: { settings: SystemSettings; onSa
   const [healthAlert, setHealthAlert] = useState(settings.health_alerts_enabled !== 'false');
   const [logAlert, setLogAlert] = useState(settings.log_alerts_enabled !== 'false');
   const [historyAlert, setHistoryAlert] = useState(settings.history_alerts_enabled !== 'false');
-  const [syslogEnabled, setSyslogEnabled] = useState(settings.syslog_enabled === 'true');
-  const [syslogPort, setSyslogPort] = useState(Number(settings.syslog_port) || 5140);
 
   const fmt = (sec: number) => {
     if (sec < 60) return `${sec}s`;
@@ -625,27 +623,6 @@ function MonitoringTab({ settings, onSave, c }: { settings: SystemSettings; onSa
         </div>
       ))}
 
-      {/* Syslog */}
-      <div className="rounded-lg p-4" style={{ background: c.bgPage, border: `1px solid ${c.border}` }}>
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <span className="text-sm font-semibold" style={{ color: c.textPrimary }}>📡 Syslog Receiver</span>
-            <p className="text-xs mt-0.5" style={{ color: c.textMuted }}>
-              Recibe logs de RouterOS en tiempo real via UDP (configurar en RouterOS: /system/logging action add name=remote remote=IP_DEL_SERVIDOR remote-port={syslogPort} target=remote)
-            </p>
-          </div>
-          <Toggle value={syslogEnabled} onChange={() => setSyslogEnabled(!syslogEnabled)} c={c} />
-        </div>
-        {syslogEnabled && (
-          <div className="flex items-center gap-3 mt-3 pt-3" style={{ borderTop: `1px solid ${c.border}` }}>
-            <span className="text-xs font-medium" style={{ color: c.textSecondary }}>Puerto UDP:</span>
-            <input type="number" min={1024} max={65535} value={syslogPort}
-              onChange={e => setSyslogPort(Math.max(1024, Number(e.target.value)))}
-              className="input w-24 text-center text-sm font-mono py-1" />
-          </div>
-        )}
-      </div>
-
       <button onClick={() => onSave({
         health_check_interval: String(health),
         log_fetch_interval: String(logs),
@@ -653,8 +630,6 @@ function MonitoringTab({ settings, onSave, c }: { settings: SystemSettings; onSa
         health_alerts_enabled: healthAlert ? 'true' : 'false',
         log_alerts_enabled: logAlert ? 'true' : 'false',
         history_alerts_enabled: historyAlert ? 'true' : 'false',
-        syslog_enabled: syslogEnabled ? 'true' : 'false',
-        syslog_port: String(syslogPort),
       })} className="btn-primary text-sm">
         <Save className="w-4 h-4 inline mr-1" />Guardar Configuración
       </button>
