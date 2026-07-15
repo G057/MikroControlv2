@@ -4,6 +4,7 @@ import socket
 import threading
 import time
 from datetime import datetime, timezone
+from queue import Queue, Full as QueueFull
 
 from app.core.database import SessionLocal
 from app.models.router import Router
@@ -13,7 +14,9 @@ from app.models.alert import Alert
 logger = logging.getLogger(__name__)
 
 _syslog_thread = None
+_worker_thread = None
 _stop_event = threading.Event()
+_msg_queue = Queue(maxsize=500)  # buffer entre receptor y worker
 
 
 def _classify_severity(topics: str) -> str:
@@ -192,6 +195,19 @@ def _handle_message(msg_bytes: bytes):
         db.close()
 
 
+def _syslog_worker():
+    """Procesa mensajes de la cola en segundo plano."""
+    while not _stop_event.is_set():
+        try:
+            msg_bytes = _msg_queue.get(timeout=1.0)
+        except Exception:
+            continue
+        try:
+            _handle_message(msg_bytes)
+        except Exception as e:
+            logger.error(f"Error en worker syslog: {e}")
+
+
 def _run_syslog_server():
     from app.api.v1.settings import get_interval, get_setting as _get_setting
 
@@ -207,6 +223,7 @@ def _run_syslog_server():
     port = get_interval("syslog_port", 5140)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 262144)  # 256 KB buffer
     try:
         sock.bind(("0.0.0.0", port))
     except OSError as e:
@@ -214,14 +231,23 @@ def _run_syslog_server():
         sock.close()
         return
 
-    logger.info(f" Syslog receiver escuchando en UDP {port}")
-    sock.settimeout(3.0)
+    logger.info(f" Syslog receiver escuchando en UDP {port} (buffer 256 KB)")
+    sock.settimeout(1.0)
+
+    # Iniciar worker thread
+    global _worker_thread
+    _worker_thread = threading.Thread(target=_syslog_worker, daemon=True, name="syslog-worker")
+    _worker_thread.start()
+
     _last_setting_check = time.time()
     while not _stop_event.is_set():
         try:
             data, addr = sock.recvfrom(4096)
             if data:
-                _handle_message(data)
+                try:
+                    _msg_queue.put_nowait(data)
+                except QueueFull:
+                    logger.warning("Cola syslog llena, descartando mensaje")
         except socket.timeout:
             now = time.time()
             if now - _last_setting_check > 60:
