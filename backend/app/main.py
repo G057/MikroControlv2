@@ -86,7 +86,7 @@ def _migrate():
             conn.execute(text(
                 "CREATE UNIQUE INDEX IF NOT EXISTS ix_alerts_unique_active_key "
                 "ON alerts(router_id, deduplication_key) "
-                "WHERE is_resolved = 0 AND deduplication_key IS NOT NULL"
+                "WHERE is_resolved = false AND deduplication_key IS NOT NULL"
             ))
     except Exception as e:
         print(f"Error migrando alerts: {e}")
