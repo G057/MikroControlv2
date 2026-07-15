@@ -67,9 +67,16 @@ export default function MonitorPage() {
   const initializedRef = useRef(false);
   const popupIdRef = useRef(0);
 
-  const playAlertSound = useCallback(() => {
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  const playAlertSound = useCallback(async () => {
     try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      let ctx = audioCtxRef.current;
+      if (!ctx || ctx.state === 'closed') {
+        ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        audioCtxRef.current = ctx;
+      }
+      if (ctx.state === 'suspended') await ctx.resume();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
@@ -80,7 +87,6 @@ export default function MonitorPage() {
       gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
       osc.start(ctx.currentTime);
       osc.stop(ctx.currentTime + 0.3);
-      // second pulse
       const osc2 = ctx.createOscillator();
       const gain2 = ctx.createGain();
       osc2.connect(gain2);
