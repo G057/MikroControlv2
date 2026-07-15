@@ -1,12 +1,10 @@
 import threading
 import logging
-import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from app.core.database import SessionLocal
 from app.models.router import Router
-from app.models.alert import Alert
-from app.models.event_log import EventLog
+from app.services.connectivity import apply_probe_result
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +92,7 @@ def _check_all_routers():
 
 
 def _apply_online(db, router, now, resources, health):
-    was_offline = not router.is_online
-    router.is_online = True
+    # Availability is committed only by the persistent state machine below.
     router.last_seen = now
     r = resources[0]
     try:
@@ -131,128 +128,17 @@ def _apply_online(db, router, now, resources, health):
                     router.temperature = float(value)
                 except (ValueError, TypeError):
                     pass
+
             elif name == "voltage" and value:
                 try:
                     router.voltage = float(value)
                 except (ValueError, TypeError):
                     pass
 
-    if was_offline:
-        # El router volvió: resolver la alerta de desconexión (el problema
-        # terminó) y limpiar notificaciones previas de reconexión activas.
-        db.query(Alert).filter(
-            Alert.router_id == router.id,
-            Alert.alert_type.in_(["router_offline", "router_online"]),
-            Alert.is_resolved == False,
-        ).update({
-            "is_resolved": True,
-            "resolved_at": now,
-            "resolved_by": "system",
-            "resolution_comment": "El router volvió a estar en línea",
-        }, synchronize_session=False)
-
-        # Notificación informativa de reconexión (ya resuelta: no es un
-        # problema activo, no debe contar como alerta abierta).
-        _create_event_log(db, router, "info", "router_online",
-                          f"{router.name} se reconectó")
-        _create_alert(db, router.id, "router_online", "info",
-                      f"{router.name} se reconectó",
-                      f"El router {router.name} está nuevamente en línea",
-                      resolved=True)
-
-
-_event_counter = 0
-
-def _make_event_hash(router_id, alert_type, message):
-    global _event_counter
-    _event_counter += 1
-    raw = f"health|{router_id}|{alert_type}|{_event_counter}|{message}"
-    return hashlib.sha256(raw.encode()).hexdigest()
-
-
-def _create_event_log(db, router, severity, alert_type, message):
-    now = datetime.now(timezone.utc)
-    content_hash = _make_event_hash(router.id, alert_type, message)
-    existing = db.query(EventLog).filter(EventLog.content_hash == content_hash).first()
-    if existing:
-        existing.last_seen = now
-        return
-    event = EventLog(
-        router_id=router.id,
-        router_name=router.name,
-        ros_time=now.strftime("%H:%M:%S"),
-        topics=f"health,{severity}",
-        message=message[:500],
-        severity=severity,
-        content_hash=content_hash,
-    )
-    db.add(event)
-    try:
-        db.flush()
-    except Exception:
-        db.rollback()
-
+    apply_probe_result(db, router, True, now=now)
 
 def _handle_offline(db, router, now, error_msg):
-    was_online = router.is_online
-    router.is_online = False
-    router.last_seen = now
-
-    if was_online:
-        _create_event_log(db, router, "critical", "router_offline",
-                          f"{router.name} se desconectó. {error_msg}")
-        _create_alert(db, router.id, "router_offline", "critical",
-                      f"{router.name} se desconectó",
-                      f"El router {router.name} dejó de responder. Error: {error_msg}")
-    else:
-        existing = db.query(Alert).filter(
-            Alert.router_id == router.id,
-            Alert.alert_type == "router_offline",
-            Alert.is_resolved == False,
-        ).first()
-        if not existing:
-            _create_event_log(db, router, "critical", "router_offline",
-                              f"{router.name} offline. {error_msg}")
-            _create_alert(db, router.id, "router_offline", "critical",
-                          f"{router.name} offline",
-                          f"El router {router.name} no responde. Error: {error_msg}")
-
-
-def _create_alert(db, router_id, alert_type, severity, title, message, resolved=False):
-    from app.api.v1.settings import get_setting
-    if get_setting(db, "health_alerts_enabled", "true") != "true":
-        return
-
-    existing = db.query(Alert).filter(
-        Alert.router_id == router_id,
-        Alert.alert_type == alert_type,
-        Alert.is_resolved == False,
-    ).first()
-    if existing:
-        return
-
-    from datetime import datetime, timezone
-    alert = Alert(
-        router_id=router_id,
-        alert_type=alert_type,
-        severity=severity,
-        title=title,
-        message=message,
-        is_resolved=resolved,
-        resolved_at=datetime.now(timezone.utc) if resolved else None,
-        resolved_by="system" if resolved else None,
-    )
-    db.add(alert)
-    try:
-        db.flush()
-    except Exception:
-        db.rollback()
-        return
-
-    from app.api.v1.settings import notify
-    icon = "🔴" if severity == "critical" else "🟡" if severity == "warning" else "ℹ️"
-    tg_msg = f"{icon} <b>{title}</b>\n{message}"
-    notify(title, message, tg_msg, severity)
+    apply_probe_result(db, router, False, error_msg, now)
 
 
 def _run_loop():

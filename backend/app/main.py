@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.database import engine, Base
+import app.models.monitoring  # Register monitoring tables before create_all.
 from app.api.v1 import api_router
 
 settings = get_settings()
@@ -43,13 +44,52 @@ def _migrate():
         print(f"Error en migración: {e}")
     try:
         with engine.begin() as conn:
-            conn.execute(text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS ix_alerts_unique_active "
-                "ON alerts(router_id, alert_type) WHERE is_resolved = 0"
-            ))
-            print("Migración: índice único parcial ix_alerts_unique_active creado en alerts")
+            conn.execute(text("DROP INDEX IF EXISTS ix_alerts_unique_active"))
     except Exception as e:
         print(f"Error creando índice único en alerts: {e}")
+    try:
+        event_columns = {c["name"] for c in inspector.get_columns("event_logs")}
+        additions = {
+            "source": "VARCHAR(30) NOT NULL DEFAULT 'legacy'",
+            "event_type": "VARCHAR(80) NOT NULL DEFAULT 'unclassified'",
+            "canonical_hash": "VARCHAR(64)",
+            "deduplication_key": "VARCHAR(255)",
+            "correlation_id": "VARCHAR(100)",
+            "raw_message": "TEXT",
+            "received_timestamp": "TIMESTAMP",
+            "event_timestamp": "TIMESTAMP",
+            "metadata_json": "JSON",
+        }
+        with engine.begin() as conn:
+            for name, definition in additions.items():
+                if name not in event_columns:
+                    conn.execute(text(f"ALTER TABLE event_logs ADD COLUMN {name} {definition}"))
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_event_logs_canonical_hash ON event_logs(canonical_hash)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_event_logs_deduplication_key ON event_logs(deduplication_key)"))
+    except Exception as e:
+        print(f"Error migrando event_logs: {e}")
+    try:
+        alert_columns = {c["name"] for c in inspector.get_columns("alerts")}
+        additions = {
+            "opening_event_id": "INTEGER",
+            "resolution_event_id": "INTEGER",
+            "deduplication_key": "VARCHAR(255)",
+            "occurrence_count": "INTEGER NOT NULL DEFAULT 1",
+            "first_seen": "TIMESTAMP",
+            "last_seen": "TIMESTAMP",
+        }
+        with engine.begin() as conn:
+            for name, definition in additions.items():
+                if name not in alert_columns:
+                    conn.execute(text(f"ALTER TABLE alerts ADD COLUMN {name} {definition}"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_alerts_deduplication_key ON alerts(deduplication_key)"))
+            conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_alerts_unique_active_key "
+                "ON alerts(router_id, deduplication_key) "
+                "WHERE is_resolved = 0 AND deduplication_key IS NOT NULL"
+            ))
+    except Exception as e:
+        print(f"Error migrando alerts: {e}")
 
 
 # Migraciones incrementales para tablas ya existentes
@@ -58,7 +98,7 @@ _migrate()
 app = FastAPI(
     title="MikroControl",
     description="Sistema de gestión de routers MikroTik",
-    version="2.0.6",
+    version="2.0.7",
     docs_url="/api/docs" if settings.DEBUG else None,
     redoc_url="/api/redoc" if settings.DEBUG else None,
     openapi_url="/api/openapi.json" if settings.DEBUG else None,
@@ -119,11 +159,11 @@ def on_startup():
     from app.services.health_check import start_health_checker
     start_health_checker()
 
-    from app.services.log_fetcher import start_log_fetcher
-    start_log_fetcher()
-
     from app.services.syslog_receiver import start_syslog_receiver
     start_syslog_receiver()
+
+    from app.services.notification_delivery import start_notification_delivery
+    start_notification_delivery()
 
     from app.api.v1.system_backup import start_backup_scheduler
     start_backup_scheduler()
@@ -249,4 +289,3 @@ def _seed_roles():
         print(f"Error sembrando roles: {e}")
     finally:
         db.close()
-

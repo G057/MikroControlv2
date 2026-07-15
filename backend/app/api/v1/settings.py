@@ -69,6 +69,10 @@ DEFAULTS = {
     "router_backup_retention_count": "60",
     "syslog_enabled": "false",
     "syslog_port": "5140",
+    "syslog_queue_max_size": "500",
+    "syslog_worker_count": "1",
+    "health_failures_to_offline": "3",
+    "health_successes_to_online": "2",
     "popup_exclusion_filters": "",
     "telegram_exclusion_filters": "",
 }
@@ -169,6 +173,10 @@ class SettingsUpdate(BaseModel):
     router_backup_retention_count: Optional[str] = None
     syslog_enabled: Optional[str] = None
     syslog_port: Optional[str] = None
+    syslog_queue_max_size: Optional[str] = None
+    syslog_worker_count: Optional[str] = None
+    health_failures_to_offline: Optional[str] = None
+    health_successes_to_online: Optional[str] = None
     popup_exclusion_filters: Optional[str] = None
     telegram_exclusion_filters: Optional[str] = None
 

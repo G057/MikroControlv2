@@ -191,64 +191,14 @@ def check_router_status_endpoint(
     current_user: User = Depends(require_any_permission(*_VIEW_PERMS)),
 ):
     r = require_visible_router(router_id, current_user, db)
-    was_online = r.is_online
+    previous_online = r.is_online
     from app.services.routeros_service import check_router_status
     result = check_router_status(r)
+    # The manual probe contributes to the same persistent state machine as health.
+    r.is_online = previous_online
+    from app.services.connectivity import apply_probe_result
+    apply_probe_result(db, r, result.get("online", False), result.get("error"))
     db.commit()
     db.refresh(r)
-
-    if was_online and not r.is_online:
-        from app.models.alert import Alert
-        existing = db.query(Alert).filter(
-            Alert.router_id == r.id,
-            Alert.alert_type == "router_offline",
-            Alert.is_resolved == False,
-        ).first()
-        if not existing:
-            from datetime import datetime, timezone
-            alert = Alert(
-                router_id=r.id,
-                alert_type="router_offline",
-                severity="critical",
-                title=f"{r.name} se desconectó",
-                message=f"El router {r.name} dejó de responder (verificación manual).",
-            )
-            db.add(alert)
-            db.commit()
-
-            from app.api.v1.settings import notify
-            notify(f"{r.name} se desconectó",
-                   f"El router {r.name} dejó de responder (verificación manual).",
-                   f"🔴 <b>{r.name} se desconectó</b>\nEl router dejó de responder (verificación manual).")
-
-    elif not was_online and r.is_online:
-        from app.models.alert import Alert
-        existing = db.query(Alert).filter(
-            Alert.router_id == r.id,
-            Alert.alert_type == "router_online",
-            Alert.is_resolved == False,
-        ).first()
-        if existing:
-            from datetime import datetime, timezone
-            existing.is_resolved = True
-            existing.resolved_at = datetime.now(timezone.utc)
-            existing.resolved_by = current_user.username
-            db.commit()
-
-        from app.models.alert import Alert
-        alert = Alert(
-            router_id=r.id,
-            alert_type="router_online",
-            severity="info",
-            title=f"{r.name} se reconectó",
-            message=f"El router {r.name} está nuevamente en línea (verificación manual).",
-        )
-        db.add(alert)
-        db.commit()
-
-        from app.api.v1.settings import notify
-        notify(f"{r.name} se reconectó",
-               f"El router {r.name} está nuevamente en línea (verificación manual).",
-               f"🟢 <b>{r.name} se reconectó</b>\nEl router está nuevamente en línea (verificación manual).")
 
     return result

@@ -4,285 +4,193 @@ import socket
 import threading
 import time
 from datetime import datetime, timezone
-from queue import Queue, Full as QueueFull
+from queue import Empty, Full, Queue
 
 from app.core.database import SessionLocal
+from app.models.monitoring import SyslogMetric, UnmatchedSyslogMessage
 from app.models.router import Router
-from app.models.event_log import EventLog
-from app.models.alert import Alert
+from app.services.event_pipeline import NormalizedEvent, ingest_event
 
 logger = logging.getLogger(__name__)
-
 _syslog_thread = None
-_worker_thread = None
+_worker_threads = []
 _stop_event = threading.Event()
-_msg_queue = Queue(maxsize=500)  # buffer entre receptor y worker
+_msg_queue = None
 
 
-def _classify_severity(topics: str) -> str:
-    SEVERITY_MAP = {
-        "critical": "critical",
-        "error": "critical",
-        "warning": "warning",
-        "info": "info",
-    }
-    for part in topics.lower().split(","):
-        part = part.strip()
-        if part in SEVERITY_MAP:
-            return SEVERITY_MAP[part]
-    return "info"
-
-
-def _make_hash(router_id: int, ros_id: str, ros_time: str, topics: str, message: str) -> str:
-    import hashlib
-    raw = f"{router_id}|syslog|{ros_time}|{topics}|{message}"
-    return hashlib.sha256(raw.encode()).hexdigest()
-
-
-def _find_router(db, hostname: str):
-    for col in (Router.identity, Router.name, Router.hostname):
-        r = db.query(Router).filter(col == hostname).first()
-        if r:
-            return r
-    return None
-
-
-def _create_alert(db, router_id, alert_type, severity, title, message):
-    existing = db.query(Alert).filter(
-        Alert.router_id == router_id,
-        Alert.alert_type == alert_type,
-        Alert.is_resolved == False,
-    ).first()
-    if existing:
-        return False
-    alert = Alert(
-        router_id=router_id,
-        alert_type=alert_type,
-        severity=severity,
-        title=title,
-        message=message,
-    )
-    db.add(alert)
+def _setting_int(key, default):
+    from app.api.v1.settings import get_setting
+    db = SessionLocal()
     try:
-        db.flush()
-    except Exception:
-        db.rollback()
-        return False
-    return True
+        return max(1, int(get_setting(db, key, str(default))))
+    except (TypeError, ValueError):
+        return default
+    finally:
+        db.close()
+
+
+def _metric(db, key, amount=1):
+    row = db.get(SyslogMetric, key)
+    if not row:
+        row = SyslogMetric(key=key, value=0)
+        db.add(row)
+    row.value += amount
 
 
 def _parse_syslog(msg_bytes: bytes):
-    text = msg_bytes.decode("utf-8", errors="replace").strip()
+    if len(msg_bytes) > 8192:
+        raise ValueError("message_too_large")
+    text = msg_bytes.decode("utf-8", errors="replace").replace("\x00", " ").strip()
     if not text:
-        return None
-
-    pri = 13
-    body = text
-    pri_m = re.match(r"<(\d+)>\s*", text)
-    if pri_m:
-        pri = int(pri_m.group(1))
-        body = text[pri_m.end():].strip()
-
-    rest = body
-    ts_patterns = [
-        r"(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:?\d{2}|Z)?)\s+",
-        r"(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+",
-    ]
-    timestamp = None
-    for pat in ts_patterns:
-        m = re.match(pat, rest, re.IGNORECASE)
-        if m:
-            timestamp = m.group(1)
-            rest = rest[m.end():]
-            break
-
-    host_m = re.match(r"(\S+)\s+", rest)
-    if not host_m:
-        return None
-    hostname = host_m.group(1)
-    rest = rest[host_m.end():].strip()
-
-    topics = ""
-    message = rest
-    sep_m = re.match(r"([\w,\-]+):\s*(.*)", rest)
-    if sep_m:
-        topics = sep_m.group(1)
-        message = sep_m.group(2)
-
-    severity = _classify_severity(topics) if topics else "info"
-    return {
-        "hostname": hostname,
-        "topics": topics,
-        "message": message or "",
-        "severity": severity,
-        "timestamp": timestamp,
-    }
+        raise ValueError("empty_message")
+    body = re.sub(r"^<(\d{1,3})>\s*", "", text)
+    timestamp = ""
+    match = re.match(r"((?:\d{4}-\d\d-\d\d[T ])?\d{1,2}:\d\d:\d\d|\w{3}\s+\d{1,2}\s+\d\d:\d\d:\d\d)\s+", body)
+    if match:
+        timestamp, body = match.group(1), body[match.end():]
+    host = re.match(r"(\S+)\s+(.+)$", body)
+    if not host:
+        raise ValueError("missing_hostname")
+    hostname, rest = host.group(1)[:200], host.group(2)
+    topic = re.match(r"([\w,-]{1,200}):\s*(.*)$", rest)
+    return {"hostname": hostname, "topics": topic.group(1) if topic else "",
+            "message": (topic.group(2) if topic else rest)[:8000], "timestamp": timestamp,
+            "raw_message": text[:8000]}
 
 
-def _handle_message(msg_bytes: bytes):
-    parsed = _parse_syslog(msg_bytes)
-    if not parsed:
-        return
+def _find_router(db, source_ip, hostname):
+    # An explicit source address is authoritative. Never choose a non-unique fallback.
+    candidates = db.query(Router).filter(Router.ip_address == source_ip).all()
+    if len(candidates) == 1:
+        return candidates[0], []
+    candidates = []
+    for col in (Router.identity, Router.hostname, Router.name):
+        matches = db.query(Router).filter(col == hostname).all()
+        if len(matches) == 1:
+            return matches[0], []
+        candidates.extend(matches)
+    return None, sorted({router.id for router in candidates})
 
+
+def _store_unmatched(db, source_ip, parsed, reason, candidates):
+    db.add(UnmatchedSyslogMessage(source_ip=source_ip, parsed_hostname=parsed.get("hostname"),
+                                  raw_message=parsed.get("raw_message", ""), reason=reason,
+                                  candidate_router_ids=candidates))
+    _metric(db, "syslog_unmatched_total")
+
+
+def _handle_message(msg_bytes, source_ip):
     db = SessionLocal()
     try:
-        router = _find_router(db, parsed["hostname"])
-        if not router:
-            logger.debug(f"Syslog hostname desconocido: {parsed['hostname']}")
-            return
-
-        content_hash = _make_hash(
-            router.id, "", parsed.get("timestamp") or "",
-            parsed["topics"], parsed["message"]
-        )
-        existing = db.query(EventLog).filter(EventLog.content_hash == content_hash).first()
-        if existing:
-            existing.last_seen = datetime.now(timezone.utc)
+        _metric(db, "syslog_received_total")
+        try:
+            parsed = _parse_syslog(msg_bytes)
+        except ValueError as exc:
+            _metric(db, "syslog_parse_errors_total")
+            _store_unmatched(db, source_ip, {"raw_message": msg_bytes.decode("utf-8", "replace")[:8000]}, str(exc), [])
             db.commit()
             return
-
-        from app.core.event_filter import load_exclusion_filters, is_event_excluded
-        excl_filters = load_exclusion_filters(db)
-        if is_event_excluded(parsed["message"], parsed["topics"], excl_filters):
+        router, candidates = _find_router(db, source_ip, parsed["hostname"])
+        if not router:
+            _store_unmatched(db, source_ip, parsed, "ambiguous_router" if candidates else "router_not_found", candidates)
+            db.commit()
             return
-
-        event = EventLog(
-            router_id=router.id,
-            router_name=router.name,
-            ros_time=parsed.get("timestamp") or "",
-            topics=parsed["topics"],
-            message=parsed["message"],
-            severity=parsed["severity"],
-            content_hash=content_hash,
-        )
-        db.add(event)
+        event, created, _, _ = ingest_event(db, NormalizedEvent(router.id, router.name, "syslog", parsed["topics"],
+            parsed["message"], ros_time=parsed["timestamp"], raw_message=parsed["raw_message"],
+            metadata={"source_ip": source_ip, "parsed_hostname": parsed["hostname"]}))
+        _metric(db, "syslog_parsed_total")
+        if not created:
+            _metric(db, "syslog_duplicate_total")
+        elif event.event_type == "unclassified":
+            _metric(db, "syslog_unclassified_total")
+        db.commit()
+    except Exception as exc:
+        logger.exception("Error procesando syslog: %s", exc)
+        db.rollback()
         try:
-            db.flush()
+            _metric(db, "syslog_db_errors_total")
+            db.commit()
         except Exception:
             db.rollback()
-            return
+    finally:
+        db.close()
 
-        sev = parsed["severity"]
-        if sev in ("warning", "critical"):
-            from app.api.v1.settings import get_setting, notify
-            if get_setting(db, "log_alerts_enabled", "true") != "true":
-                db.commit()
-                return
 
-            alert_type = "log_warning" if sev == "warning" else "log_critical"
-            created = _create_alert(
-                db, router.id, alert_type, sev,
-                f"{router.name}: {sev}",
-                parsed["message"][:200],
-            )
-            repeat_key = "notify_repeat_critical" if sev == "critical" else "notify_repeat_warning"
-            if created or get_setting(db, repeat_key, "true") == "true":
-                icon = "🔴" if sev == "critical" else "🟡"
-                tg_msg = f"{icon} <b>{router.name}: {sev} (syslog)</b>\n{parsed['message'][:200]}"
-                notify(
-                    f"{router.name}: {sev}",
-                    parsed["message"][:200],
-                    tg_msg,
-                    sev,
-                    message=parsed["message"][:500],
-                    topics=parsed["topics"],
-                )
+def _worker():
+    while not _stop_event.is_set():
+        try:
+            data, source_ip = _msg_queue.get(timeout=1)
+        except Empty:
+            continue
+        try:
+            _handle_message(data, source_ip)
+        finally:
+            _msg_queue.task_done()
+
+
+def _record_drop(data, source_ip):
+    db = SessionLocal()
+    try:
+        parsed = {"raw_message": data.decode("utf-8", "replace")[:8000]}
+        try:
+            parsed.update(_parse_syslog(data))
+        except ValueError:
+            pass
+        _store_unmatched(db, source_ip, parsed, "queue_full", [])
+        _metric(db, "syslog_queue_dropped_total")
         db.commit()
-    except Exception as e:
-        logger.error(f"Error procesando syslog: {e}")
+    except Exception:
         db.rollback()
     finally:
         db.close()
 
 
-def _syslog_worker():
-    """Procesa mensajes de la cola en segundo plano."""
-    while not _stop_event.is_set():
-        try:
-            msg_bytes = _msg_queue.get(timeout=1.0)
-        except Exception:
-            continue
-        try:
-            _handle_message(msg_bytes)
-        except Exception as e:
-            logger.error(f"Error en worker syslog: {e}")
-
-
-def _run_syslog_server():
-    from app.api.v1.settings import get_interval, get_setting as _get_setting
-
-    def _is_enabled():
-        db = SessionLocal()
-        try:
-            return _get_setting(db, "syslog_enabled", "false") == "true"
-        except Exception:
-            return False
-        finally:
-            db.close()
-
+def _run_server():
+    from app.api.v1.settings import get_interval
     port = get_interval("syslog_port", 5140)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 262144)  # 256 KB buffer
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 262144)
     try:
         sock.bind(("0.0.0.0", port))
-    except OSError as e:
-        logger.error(f"No se pudo bindear puerto syslog {port}: {e}")
-        sock.close()
+    except OSError as exc:
+        logger.error("No se pudo bindear syslog UDP %s: %s", port, exc)
         return
-
-    logger.info(f" Syslog receiver escuchando en UDP {port} (buffer 256 KB)")
-    sock.settimeout(1.0)
-
-    # Iniciar worker thread
-    global _worker_thread
-    _worker_thread = threading.Thread(target=_syslog_worker, daemon=True, name="syslog-worker")
-    _worker_thread.start()
-
-    _last_setting_check = time.time()
+    sock.settimeout(1)
+    logger.info("Syslog receiver listening on UDP %s", port)
     while not _stop_event.is_set():
         try:
-            data, addr = sock.recvfrom(4096)
-            if data:
-                try:
-                    _msg_queue.put_nowait(data)
-                except QueueFull:
-                    logger.warning("Cola syslog llena, descartando mensaje")
+            data, address = sock.recvfrom(8192)
+            try:
+                _msg_queue.put_nowait((data, address[0]))
+            except Full:
+                logger.warning("Syslog queue full; persisted dropped message from %s", address[0])
+                _record_drop(data, address[0])
         except socket.timeout:
-            now = time.time()
-            if now - _last_setting_check > 60:
-                _last_setting_check = now
-                if not _is_enabled():
-                    logger.info("Syslog receiver disabled via runtime setting change")
-                    break
             continue
-        except Exception as e:
-            logger.error(f"Error en syslog socket: {e}")
+        except OSError as exc:
+            logger.error("Syslog socket error: %s", exc)
     sock.close()
-    logger.info("Syslog receiver detenido")
 
 
 def start_syslog_receiver():
-    from app.api.v1.settings import get_setting as _get_setting
+    from app.api.v1.settings import get_setting
     db = SessionLocal()
     try:
-        enabled = _get_setting(db, "syslog_enabled", "false") == "true"
-    except Exception:
-        enabled = False
+        if get_setting(db, "syslog_enabled", "false") != "true":
+            return
     finally:
         db.close()
-    if not enabled:
-        logger.info("Syslog receiver disabled via setting")
-        return
-    global _syslog_thread
+    global _syslog_thread, _msg_queue, _worker_threads
     if _syslog_thread and _syslog_thread.is_alive():
         return
     _stop_event.clear()
-    _syslog_thread = threading.Thread(
-        target=_run_syslog_server, daemon=True, name="syslog-receiver"
-    )
+    _msg_queue = Queue(maxsize=_setting_int("syslog_queue_max_size", 500))
+    _worker_threads = [threading.Thread(target=_worker, daemon=True, name=f"syslog-worker-{i}")
+                       for i in range(_setting_int("syslog_worker_count", 1))]
+    for worker in _worker_threads:
+        worker.start()
+    _syslog_thread = threading.Thread(target=_run_server, daemon=True, name="syslog-receiver")
     _syslog_thread.start()
-    logger.info("Syslog receiver thread started")
 
 
 def stop_syslog_receiver():

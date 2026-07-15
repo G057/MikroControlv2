@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, UniqueConstraint, Index
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, UniqueConstraint, Index, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -15,6 +15,15 @@ class EventLog(Base):
     message = Column(Text, nullable=False)
     severity = Column(String(20), nullable=False, index=True)
     content_hash = Column(String(64), nullable=False, unique=True)
+    source = Column(String(30), nullable=False, default="legacy", index=True)
+    event_type = Column(String(80), nullable=False, default="unclassified", index=True)
+    canonical_hash = Column(String(64), nullable=True, unique=True, index=True)
+    deduplication_key = Column(String(255), nullable=True, index=True)
+    correlation_id = Column(String(100), nullable=True, index=True)
+    raw_message = Column(Text, nullable=True)
+    received_timestamp = Column(DateTime(timezone=True), nullable=True, index=True)
+    event_timestamp = Column(DateTime(timezone=True), nullable=True)
+    metadata_json = Column(JSON, nullable=True)
     first_seen = Column(DateTime(timezone=True), server_default=func.now())
     last_seen = Column(DateTime(timezone=True), server_default=func.now())
 

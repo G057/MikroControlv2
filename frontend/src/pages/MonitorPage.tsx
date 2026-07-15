@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { monitorAPI } from '../services/api';
-import type { MonitorRouter, MonitorResponse } from '../types';
+import type { MonitorRouter } from '../types';
+import type { MonitorNotification } from '../services/api';
 import {
   Radio,
   LayoutDashboard,
@@ -59,13 +60,16 @@ export default function MonitorPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [filterOpen, setFilterOpen] = useState(false);
-  const [alertPopups, setAlertPopups] = useState<{id: number; routerName: string; critical: number; warning: number; time: string}[]>([]);
+  const [alertPopups, setAlertPopups] = useState<MonitorNotification[]>([]);
   const [muted, setMuted] = useState(() => localStorage.getItem('monitor_mute') === 'true');
+  const [popupsPaused, setPopupsPaused] = useState(false);
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
   const sinceEventLogRef = useRef<number>(0);
   const initializedRef = useRef(false);
-  const popupIdRef = useRef(0);
+  const notificationCursorRef = useRef(0);
+  const receivedNotificationIds = useRef(new Set<number>());
+  const playedNotificationIds = useRef(new Set<number>());
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const warmedRef = useRef(false);
@@ -87,14 +91,14 @@ export default function MonitorPage() {
     return () => document.removeEventListener('click', warm);
   }, []);
 
-  const playAlertSound = useCallback(() => {
+  const playAlertSound = useCallback(async () => {
     try {
       let ctx = audioCtxRef.current;
       if (!ctx) {
         ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
         audioCtxRef.current = ctx;
       }
-      if (ctx.state === 'suspended') ctx.resume();
+      if (ctx.state === 'suspended') await ctx.resume();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
@@ -115,36 +119,38 @@ export default function MonitorPage() {
       gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
       osc2.start(ctx.currentTime + 0.15);
       osc2.stop(ctx.currentTime + 0.5);
-    } catch {}
+    } catch (error) { console.warn('Notification audio failed', error); }
   }, []);
 
   const fetchData = useCallback(async () => {
     const isFirst = !initializedRef.current;
     initializedRef.current = true;
     try {
-      const since = sinceEventLogRef.current || undefined;
-      const resp = await monitorAPI.list(since);
+      const resp = await monitorAPI.list();
       setRouters(resp.routers);
-
-      if (!isFirst) {
-        const now = new Date();
-        const timeStr = now.toLocaleDateString() + ' ' + now.toLocaleTimeString();
-        const fresh: {id: number; routerName: string; critical: number; warning: number; time: string}[] = [];
-        for (const r of resp.routers) {
-          const nc = r.new_critical_events || 0;
-          const nw = r.new_warning_events || 0;
-          if (nc > 0 || nw > 0) {
-            popupIdRef.current += 1;
-            fresh.push({id: popupIdRef.current, routerName: r.name, critical: nc, warning: nw, time: timeStr});
+      let hasMore = true;
+      while (hasMore) {
+        const batch = await monitorAPI.notifications(notificationCursorRef.current);
+        hasMore = batch.hasMore;
+        notificationCursorRef.current = batch.nextCursor;
+        const fresh = batch.items.filter(item => !receivedNotificationIds.current.has(item.id));
+        fresh.forEach(item => receivedNotificationIds.current.add(item.id));
+        const displayable = isFirst ? fresh.filter(item => item.severity === 'critical') : fresh;
+        if (!popupsPaused && displayable.length) {
+          setAlertPopups(prev => {
+            const critical = [...prev.filter(item => item.severity === 'critical'), ...fresh.filter(item => item.popupRequired && item.severity === 'critical')];
+            const other = [...prev.filter(item => item.severity !== 'critical'), ...displayable.filter(item => item.popupRequired && item.severity !== 'critical')].slice(-50);
+            return [...critical, ...other];
+          });
+          for (const item of displayable) {
+            if (item.soundRequired && !mutedRef.current && !playedNotificationIds.current.has(item.id)) {
+              playedNotificationIds.current.add(item.id);
+              void playAlertSound();
+            }
           }
         }
-        if (fresh.length > 0 && !mutedRef.current) {
-          setAlertPopups(prev => [...prev, ...fresh].slice(-50));
-          playAlertSound();
-        }
       }
-      if (resp.max_event_log_id > 0) sinceEventLogRef.current = resp.max_event_log_id;
-    } catch {}
+    } catch (error) { console.warn('Monitor polling failed', error); }
   }, []);
 
   useEffect(() => {
@@ -311,10 +317,13 @@ export default function MonitorPage() {
             </div>
 
             {hasPermission('monitor:mute') && (
-              <button onClick={() => { setMuted(!muted); localStorage.setItem('monitor_mute', String(!muted)); if (!muted) setAlertPopups([]); }} className="p-2 rounded-lg transition-colors" style={{ color: muted ? c.textMuted : c.accent }} title={muted ? 'Silencio activado' : 'Silenciar alertas'}>
+              <button onClick={() => { setMuted(!muted); localStorage.setItem('monitor_mute', String(!muted)); }} className="p-2 rounded-lg transition-colors" style={{ color: muted ? c.textMuted : c.accent }} title={muted ? 'Silencio activado' : 'Silenciar sonido'}>
                 {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
               </button>
             )}
+            <button onClick={() => setPopupsPaused(!popupsPaused)} className="px-2 py-1 rounded-lg text-xs" style={{ color: popupsPaused ? c.textMuted : c.accent, border: `1px solid ${c.border}` }} title="Pausar o reanudar popups">
+              {popupsPaused ? 'Reanudar' : 'Pausar'}
+            </button>
             <button onClick={toggleTheme} className="p-2 rounded-lg transition-colors" style={{ color: c.textMuted }} title={isDark ? 'Modo día' : 'Modo noche'}>
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
@@ -474,24 +483,21 @@ export default function MonitorPage() {
         </div>
       </div>
 
-      {/* Popups de alertas — uno por router, sin auto-dismiss, con scroll */}
-      {alertPopups.filter(p => !mutedRef.current).length > 0 && (
+      {!popupsPaused && alertPopups.length > 0 && (
         <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-h-[80vh] overflow-y-auto" style={{ maxWidth: 384, scrollbarWidth: 'thin' }}>
-          {alertPopups.filter(p => !mutedRef.current).map(p => (
-            <div key={p.id} className="w-96 rounded-xl p-4 shadow-2xl animate-slide-down flex-shrink-0" style={{ background: c.bgCard, border: `1px solid ${p.critical > 0 ? c.red : c.yellow}` }}>
+          {alertPopups.map(p => (
+            <div key={p.id} className="w-96 rounded-xl p-4 shadow-2xl animate-slide-down flex-shrink-0" style={{ background: c.bgCard, border: `1px solid ${p.severity === 'critical' ? c.red : c.yellow}` }}>
               <div className="flex items-center justify-between mb-1">
                 <h3 className="font-semibold truncate" style={{ color: c.textPrimary }}>
-                  {p.critical > 0 ? '🔴 ' : '🟡 '}{p.routerName}
+                  {p.severity === 'critical' ? 'Critica: ' : 'Advertencia: '}{p.title}
                 </h3>
-                <button onClick={() => setAlertPopups(prev => prev.filter(x => x.id !== p.id))} className="p-1 rounded-lg hover:opacity-70 transition-opacity flex-shrink-0" style={{ color: c.textMuted }}>
+                <button onClick={() => { setAlertPopups(prev => prev.filter(x => x.id !== p.id)); void monitorAPI.acknowledge(p.id); }} className="p-1 rounded-lg hover:opacity-70 transition-opacity flex-shrink-0" style={{ color: c.textMuted }}>
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <p className="text-[11px] mb-1 font-mono" style={{ color: c.textMuted }}>{p.time}</p>
+              <p className="text-[11px] mb-1 font-mono" style={{ color: c.textMuted }}>{p.createdAt ? new Date(p.createdAt).toLocaleString() : ''}</p>
               <p className="text-sm" style={{ color: c.textSecondary }}>
-                {p.critical > 0 ? `${p.critical} crítica(s)` : ''}
-                {p.critical > 0 && p.warning > 0 ? ', ' : ''}
-                {p.warning > 0 ? `${p.warning} advertencia(s)` : ''}
+                {p.message}{p.occurrenceCount > 1 ? ` (${p.occurrenceCount} ocurrencias)` : ''}
               </p>
             </div>
           ))}

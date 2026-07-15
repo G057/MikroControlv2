@@ -73,13 +73,8 @@ def _fetch_all_history():
                 _fetch_router_history(db, router)
             except Exception as e:
                 logger.warning(f"History fetch failed for {router.name}: {e}")
-                was_online = router.is_online
-                router.is_online = False
-                router.last_seen = datetime.now(timezone.utc)
-                if was_online:
-                    _create_alert(db, router.id, "router_offline", "critical",
-                                  f"{router.name} se desconectó",
-                                  f"El router {router.name} dejó de responder (historial). Error: {e}")
+                # History collection is not an availability probe. Health check owns state changes.
+                logger.warning("History fetch failed for %s without changing connectivity", router.name)
         db.commit()
         _purge_old_history(db)
     except Exception as e:

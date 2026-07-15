@@ -12,10 +12,12 @@ from app.models.interface_counter_state import InterfaceCounterState
 from app.models.settings import SystemSetting
 from app.models.dashboard_pref import DashboardPreference
 from app.models.role import Role
+from app.models.monitoring import RouterConnectivityState, Notification, NotificationDelivery, UnmatchedSyslogMessage, SyslogMetric
 
 __all__ = [
     "User", "Router", "RouterGroup", "RouterTag",
     "InventoryItem", "AuditLog", "Backup",
     "Alert", "AlertRule", "EventLog", "ConfigTemplate", "RouterHistory",
     "InterfaceTraffic", "InterfaceCounterState", "SystemSetting", "DashboardPreference", "Role",
+    "RouterConnectivityState", "Notification", "NotificationDelivery", "UnmatchedSyslogMessage", "SyslogMetric",
 ]

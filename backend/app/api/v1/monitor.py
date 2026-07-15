@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.core.database import get_db
@@ -10,8 +11,52 @@ from app.models.user import User
 from app.models.router import Router
 from app.models.alert import Alert
 from app.models.event_log import EventLog
+from app.models.monitoring import Notification
 
 router = APIRouter()
+
+
+@router.get("/notifications")
+def get_notifications(
+    after_id: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("monitor:view")),
+):
+    visible_ids = get_visible_router_ids(current_user, db)
+    q = db.query(Notification).filter(Notification.id > after_id)
+    if visible_ids is not None:
+        q = q.filter((Notification.router_id.is_(None)) | (Notification.router_id.in_(visible_ids)))
+    rows = q.order_by(Notification.id.asc()).limit(limit + 1).all()
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    return {"items": [{"id": n.id, "eventLogId": n.event_log_id, "alertId": n.alert_id,
+                        "routerId": n.router_id, "notificationType": n.notification_type,
+                        "severity": n.severity, "title": n.title, "message": n.message,
+                        "popupRequired": n.popup_required, "soundRequired": n.sound_required,
+                        "status": n.status, "occurrenceCount": n.occurrence_count,
+                        "createdAt": utc_iso(n.created_at)} for n in rows],
+            "nextCursor": rows[-1].id if rows else after_id, "hasMore": has_more,
+            "serverTimestamp": datetime.now(timezone.utc).isoformat()}
+
+
+@router.put("/notifications/{notification_id}/acknowledge")
+def acknowledge_notification(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("monitor:view")),
+):
+    item = db.get(Notification, notification_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Notificación no encontrada")
+    visible_ids = get_visible_router_ids(current_user, db)
+    if visible_ids is not None and item.router_id not in visible_ids:
+        raise HTTPException(status_code=404, detail="Notificación no encontrada")
+    item.status = "acknowledged"
+    item.acknowledged_at = datetime.now(timezone.utc)
+    item.acknowledged_by = current_user.username
+    db.commit()
+    return {"status": item.status}
 
 
 def _alert_counts(db, visible_ids):

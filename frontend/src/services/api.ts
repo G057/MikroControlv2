@@ -281,6 +281,8 @@ export interface SystemSettings {
   router_backup_retention_count: string;
   syslog_enabled: string;
   syslog_port: string;
+  syslog_queue_max_size: string; syslog_worker_count: string;
+  health_failures_to_offline: string; health_successes_to_online: string;
 }
 
 export interface OperatorUser {
@@ -526,4 +528,14 @@ export const monitorAPI = {
     const query = since_event_log_id ? `?since_event_log_id=${since_event_log_id}` : '';
     return request<MonitorResponse>(`/monitor/${query}`);
   },
+  notifications: (after_id: number, limit = 100) =>
+    request<NotificationBatch>(`/monitor/notifications?after_id=${after_id}&limit=${limit}`),
+  acknowledge: (id: number) => request<{ status: string }>(`/monitor/notifications/${id}/acknowledge`, { method: 'PUT' }),
 };
+
+export interface MonitorNotification {
+  id: number; eventLogId: number | null; alertId: number | null; routerId: number | null;
+  notificationType: string; severity: string; title: string; message: string;
+  popupRequired: boolean; soundRequired: boolean; status: string; occurrenceCount: number; createdAt: string | null;
+}
+export interface NotificationBatch { items: MonitorNotification[]; nextCursor: number; hasMore: boolean; serverTimestamp: string; }

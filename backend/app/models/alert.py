@@ -33,6 +33,12 @@ class Alert(Base):
     resolved_by = Column(String(50), nullable=True)
     resolution_comment = Column(Text, nullable=True)
     notified = Column(Boolean, default=False)
+    opening_event_id = Column(Integer, ForeignKey("event_logs.id"), nullable=True)
+    resolution_event_id = Column(Integer, ForeignKey("event_logs.id"), nullable=True)
+    deduplication_key = Column(String(255), nullable=True, index=True)
+    occurrence_count = Column(Integer, nullable=False, default=1)
+    first_seen = Column(DateTime(timezone=True), nullable=True)
+    last_seen = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     router = relationship("Router", back_populates="alerts")
