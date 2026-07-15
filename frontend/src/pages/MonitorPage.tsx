@@ -113,7 +113,7 @@ export default function MonitorPage() {
           }
         }
         if (fresh.length > 0 && !mutedRef.current) {
-          setAlertPopups(prev => [...prev, ...fresh]);
+          setAlertPopups(prev => [...prev, ...fresh].slice(-50));
           playAlertSound();
         }
       }
