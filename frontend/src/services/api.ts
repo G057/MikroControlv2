@@ -1,4 +1,4 @@
-import type { User, RouterDevice, RouterGroup, RouterTag, DashboardData, DashboardCharts, AuditLogEntry, InventoryItem, Alert, AlertRule, ConfigTemplate, Backup, MonitorRouter } from '../types';
+import type { User, RouterDevice, RouterGroup, RouterTag, DashboardData, DashboardCharts, AuditLogEntry, InventoryItem, Alert, AlertRule, ConfigTemplate, Backup, MonitorRouter, MonitorResponse } from '../types';
 
 const API_BASE = '/api/v1';
 
