@@ -1,5 +1,3 @@
-from datetime import datetime, timezone, timedelta
-
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -48,22 +46,6 @@ def _alert_counts(db, visible_ids):
     return data
 
 
-def _recent_event_counts(db, visible_ids):
-    """Cuenta EventLog con severity warning/critical en los últimos 60s."""
-    since = datetime.now(timezone.utc) - timedelta(seconds=60)
-    data = {}
-    for sev in ("warning", "critical"):
-        q = db.query(EventLog.router_id, func.count(EventLog.id)).filter(
-            EventLog.severity == sev,
-            EventLog.first_seen >= since,
-        )
-        if visible_ids is not None:
-            q = q.filter(EventLog.router_id.in_(visible_ids))
-        for r_id, cnt in q.group_by(EventLog.router_id).all():
-            data.setdefault(r_id, {})[sev] = cnt
-    return data
-
-
 @router.get("/")
 def get_monitor(db: Session = Depends(get_db), current_user: User = Depends(require_permission("monitor:view"))):
     visible_ids = get_visible_router_ids(current_user, db)
@@ -78,12 +60,30 @@ def get_monitor(db: Session = Depends(get_db), current_user: User = Depends(requ
     routers = q.all()
 
     alert_data = _alert_counts(db, visible_ids)
-    recent_data = _recent_event_counts(db, visible_ids)
+
+    # max EventLog id por router y severidad (monotónico, nunca decrece)
+    max_crit = dict(
+        db.query(EventLog.router_id, func.max(EventLog.id))
+        .filter(EventLog.severity == "critical")
+        .group_by(EventLog.router_id).all()
+    ) if visible_ids is None else dict(
+        db.query(EventLog.router_id, func.max(EventLog.id))
+        .filter(EventLog.severity == "critical", EventLog.router_id.in_(visible_ids))
+        .group_by(EventLog.router_id).all()
+    )
+    max_warn = dict(
+        db.query(EventLog.router_id, func.max(EventLog.id))
+        .filter(EventLog.severity == "warning")
+        .group_by(EventLog.router_id).all()
+    ) if visible_ids is None else dict(
+        db.query(EventLog.router_id, func.max(EventLog.id))
+        .filter(EventLog.severity == "warning", EventLog.router_id.in_(visible_ids))
+        .group_by(EventLog.router_id).all()
+    )
 
     result = []
     for r in routers:
         ad = alert_data.get(r.id, {"total": 0, "critical": 0, "warning": 0})
-        rd = recent_data.get(r.id, {})
         result.append({
             "id": r.id,
             "name": r.name,
@@ -92,8 +92,8 @@ def get_monitor(db: Session = Depends(get_db), current_user: User = Depends(requ
             "alert_count": ad.get("total", 0),
             "critical_count": ad.get("critical", 0),
             "warning_count": ad.get("warning", 0),
-            "recent_critical_events": rd.get("critical", 0),
-            "recent_warning_events": rd.get("warning", 0),
+            "max_critical_log_id": max_crit.get(r.id, 0) or 0,
+            "max_warning_log_id": max_warn.get(r.id, 0) or 0,
             "last_seen": utc_iso(r.last_seen),
             "group_id": r.group_id,
             "city": r.city,

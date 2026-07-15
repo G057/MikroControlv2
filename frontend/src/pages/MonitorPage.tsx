@@ -63,7 +63,7 @@ export default function MonitorPage() {
   const [muted, setMuted] = useState(() => localStorage.getItem('monitor_mute') === 'true');
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
-  const prevAlertsRef = useRef<Map<number, {critical: number; warning: number}>>(new Map());
+  const prevAlertsRef = useRef<Map<number, {max_critical_log_id: number; max_warning_log_id: number}>>(new Map());
   const initializedRef = useRef(false);
 
   const playAlertSound = useCallback(() => {
@@ -105,8 +105,8 @@ export default function MonitorPage() {
         for (const r of data) {
           const p = prev.get(r.id);
           if (p) {
-            const dc = (r.recent_critical_events || 0) - (p.critical || 0);
-            const dw = (r.recent_warning_events || 0) - (p.warning || 0);
+            const dc = (r.max_critical_log_id || 0) - (p.max_critical_log_id || 0);
+            const dw = (r.max_warning_log_id || 0) - (p.max_warning_log_id || 0);
             if (dc > 0 || dw > 0) {
               newList.push({name: r.name, critical: dc, warning: dw});
             }
@@ -126,7 +126,7 @@ export default function MonitorPage() {
       // actualizar referencia
       prev.clear();
       for (const r of data) {
-        prev.set(r.id, {critical: r.recent_critical_events || 0, warning: r.recent_warning_events || 0});
+        prev.set(r.id, {max_critical_log_id: r.max_critical_log_id || 0, max_warning_log_id: r.max_warning_log_id || 0});
       }
     } catch {}
   }, []);

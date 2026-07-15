@@ -47,6 +47,17 @@ SEVERITY_MAP = {
 }
 
 
+def _ros_time_to_seconds(ros_time: str) -> int:
+    """Convierte HH:MM:SS a segundos del día. Retorna 0 si no puede parsear."""
+    try:
+        parts = ros_time.strip().split(":")
+        if len(parts) == 3:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+    except (ValueError, IndexError):
+        pass
+    return 0
+
+
 def _classify_severity(topics: str) -> str:
     for part in topics.lower().split(","):
         part = part.strip()
@@ -142,6 +153,15 @@ def fetch_router_logs(db, router: Router) -> int:
 
         if severity in ("warning", "critical") and _should_alert(db):
             from app.api.v1.settings import notify, get_setting
+            # No notificar logs viejos (>2 intervalos de fetch)
+            interval = int(get_setting(db, "log_fetch_interval", "60"))
+            max_age = interval * 2
+            log_secs = _ros_time_to_seconds(ros_time)
+            now_secs = (datetime.now().hour * 3600 + datetime.now().minute * 60 + datetime.now().second)
+            age = (now_secs - log_secs) % 86400  # maneja cruce de medianoche
+            is_recent = age <= max_age
+            if not is_recent:
+                continue
             alert_type = "log_warning" if severity == "warning" else "log_critical"
             created = _create_alert(db, router.id, alert_type, severity,
                                     f"{router.name}: {severity}",
