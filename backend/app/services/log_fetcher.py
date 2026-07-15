@@ -144,7 +144,7 @@ def fetch_router_logs(db, router: Router) -> int:
             db.rollback()
             continue
 
-        if severity in ("warning", "critical"):
+        if severity in ("warning", "critical") and _should_alert(db):
             alert_type = "log_warning" if severity == "warning" else "log_critical"
             _create_alert(db, router.id, alert_type, severity,
                           f"{router.name}: {severity}",
