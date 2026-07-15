@@ -322,12 +322,16 @@ def send_telegram(settings: dict, message: str):
         pass
 
 
-def notify(subject: str, body: str, telegram_msg: str = None):
+def notify(subject: str, body: str, telegram_msg: str = None, severity: str = None):
     from app.core.database import SessionLocal
     db = SessionLocal()
     try:
         settings = _get_all(db)
         send_email(settings, subject, body)
+        if severity == "critical" and settings.get("notify_critical_alert", "true") != "true":
+            return
+        if severity == "warning" and settings.get("notify_warning_alert", "false") != "true":
+            return
         send_telegram(settings, telegram_msg or body)
     except Exception:
         pass

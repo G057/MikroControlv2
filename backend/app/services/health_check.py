@@ -212,7 +212,7 @@ def _create_alert(db, router_id, alert_type, severity, title, message, resolved=
     from app.api.v1.settings import notify
     icon = "🔴" if severity == "critical" else "🟡" if severity == "warning" else "ℹ️"
     tg_msg = f"{icon} <b>{title}</b>\n{message}"
-    notify(title, message, tg_msg)
+    notify(title, message, tg_msg, severity)
 
 
 def _run_loop():

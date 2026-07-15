@@ -85,7 +85,7 @@ def _create_alert(db, router_id, alert_type, severity, title, message):
     from app.api.v1.settings import notify
     icon = "🔴" if severity == "critical" else "🟡" if severity == "warning" else "ℹ️"
     tg_msg = f"{icon} <b>{title}</b>\n{message}"
-    notify(title, message, tg_msg)
+    notify(title, message, tg_msg, severity)
 
 
 def fetch_router_logs(db, router: Router) -> int:
@@ -143,6 +143,12 @@ def fetch_router_logs(db, router: Router) -> int:
         except Exception:
             db.rollback()
             continue
+
+        if severity in ("warning", "critical"):
+            alert_type = "log_warning" if severity == "warning" else "log_critical"
+            _create_alert(db, router.id, alert_type, severity,
+                          f"{router.name}: {severity}",
+                          message[:200] if message else "Sin detalle")
 
     return new_count
 

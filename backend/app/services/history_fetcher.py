@@ -61,7 +61,7 @@ def _create_alert(db, router_id, alert_type, severity, title, message):
     from app.api.v1.settings import notify
     icon = "🔴" if severity == "critical" else "🟡" if severity == "warning" else "ℹ️"
     tg_msg = f"{icon} <b>{title}</b>\n{message}"
-    notify(title, message, tg_msg)
+    notify(title, message, tg_msg, severity)
 
 
 def _fetch_all_history():
