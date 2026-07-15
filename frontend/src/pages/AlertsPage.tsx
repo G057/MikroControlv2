@@ -61,7 +61,7 @@ export default function EventsPage() {
   const [routerFilter, setRouterFilter] = useState(0);
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [counts, setCounts] = useState({ critical: 0, warning: 0, info: 0 });
+  const [counts, setCounts] = useState({ critical: 0, warning: 0, info: 0, unresolved: 0 });
   const [resolveModal, setResolveModal] = useState<{ visible: boolean; eventId: string; title: string }>({ visible: false, eventId: '', title: '' });
   const { c } = useTheme();
 
@@ -80,7 +80,11 @@ export default function EventsPage() {
     setLoading(true);
     try {
       const params: any = { limit: 500 };
-      if (severityFilter !== 'all') params.severity = severityFilter;
+      if (severityFilter === 'unresolved') {
+        params.is_resolved = false;
+      } else if (severityFilter !== 'all') {
+        params.severity = severityFilter;
+      }
       if (sourceFilter !== 'all') params.source = sourceFilter;
       if (routerFilter) params.router_id = routerFilter;
       if (search.trim()) params.search = search.trim();
@@ -131,8 +135,24 @@ export default function EventsPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
-        {(['critical', 'warning', 'info'] as const).map(key => {
+      <div className="grid grid-cols-4 gap-3">
+        {(['critical', 'warning', 'info', 'unresolved'] as const).map(key => {
+          if (key === 'unresolved') {
+            const active = severityFilter === 'unresolved';
+            return (
+              <button key={key} onClick={() => setSeverityFilter(active ? 'all' : 'unresolved')}
+                className="card text-left transition-all"
+                style={{ background: active ? c.orangeBg : c.bgCard, borderColor: active ? c.orange : c.border }}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-medium" style={{ color: c.textMuted }}>Sin resolver</p>
+                    <p className="text-2xl font-bold" style={{ color: c.orange }}>{counts.unresolved}</p>
+                  </div>
+                  <AlertCircle className="w-6 h-6" style={{ color: c.orange }} />
+                </div>
+              </button>
+            );
+          }
           const s = sevMap[key];
           return (
             <button key={key} onClick={() => setSeverityFilter(severityFilter === key ? 'all' : key)}

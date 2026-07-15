@@ -248,6 +248,7 @@ def counts_by_severity(
     source: Optional[str] = None,
     router_id: Optional[int] = None,
     search: Optional[str] = None,
+    is_resolved: Optional[bool] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -259,7 +260,7 @@ def counts_by_severity(
     visible_ids = get_visible_router_ids(current_user, db)
     router_blocked = visible_ids is not None and router_id is not None and int(router_id) not in visible_ids
 
-    counts = {"critical": 0, "warning": 0, "info": 0}
+    counts = {"critical": 0, "warning": 0, "info": 0, "unresolved": 0}
 
     if source != "health":
         q = db.query(EventLog)
@@ -283,6 +284,8 @@ def counts_by_severity(
         aq = db.query(Alert)
         if router_id:
             aq = aq.filter(Alert.router_id == router_id)
+        if is_resolved is not None:
+            aq = aq.filter(Alert.is_resolved == is_resolved)
         for a in aq.all():
             if router_blocked:
                 continue
@@ -295,6 +298,8 @@ def counts_by_severity(
                 continue
             if a.severity in counts:
                 counts[a.severity] += 1
+            if not a.is_resolved:
+                counts["unresolved"] += 1
 
     return counts
 

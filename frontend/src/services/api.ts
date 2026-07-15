@@ -459,7 +459,7 @@ export interface RouterEvent {
 }
 
 export const eventsAPI = {
-  list: (params?: { severity?: string; topic?: string; router_id?: number; search?: string; source?: string; limit?: number }) => {
+  list: (params?: { severity?: string; topic?: string; router_id?: number; search?: string; source?: string; limit?: number; is_resolved?: boolean }) => {
     const query = new URLSearchParams();
     if (params?.severity) query.set('severity', params.severity);
     if (params?.topic) query.set('topic', params.topic);
@@ -467,16 +467,18 @@ export const eventsAPI = {
     if (params?.search) query.set('search', params.search);
     if (params?.source) query.set('source', params.source);
     if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.is_resolved !== undefined) query.set('is_resolved', String(params.is_resolved));
     const qs = query.toString();
     return request<RouterEvent[]>(`/events/${qs ? '?' + qs : ''}`);
   },
-  countsBySeverity: (params?: { source?: string; router_id?: number; search?: string }) => {
+  countsBySeverity: (params?: { source?: string; router_id?: number; search?: string; is_resolved?: boolean }) => {
     const query = new URLSearchParams();
     if (params?.source) query.set('source', params.source);
     if (params?.router_id) query.set('router_id', String(params.router_id));
     if (params?.search) query.set('search', params.search);
+    if (params?.is_resolved !== undefined) query.set('is_resolved', String(params.is_resolved));
     const qs = query.toString();
-    return request<{ critical: number; warning: number; info: number }>(`/events/counts-by-severity${qs ? '?' + qs : ''}`);
+    return request<{ critical: number; warning: number; info: number; unresolved: number }>(`/events/counts-by-severity${qs ? '?' + qs : ''}`);
   },
   refresh: () => request('/events/refresh', { method: 'POST' }),
   categories: () => request<{ key: string; label: string }[]>('/events/categories'),
