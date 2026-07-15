@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { monitorAPI } from '../services/api';
-import type { MonitorRouter } from '../types';
+import type { MonitorRouter, MonitorResponse } from '../types';
 import {
   Radio,
   LayoutDashboard,
@@ -63,7 +63,8 @@ export default function MonitorPage() {
   const [muted, setMuted] = useState(() => localStorage.getItem('monitor_mute') === 'true');
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
-  const prevAlertsRef = useRef<Map<number, {max_critical_log_id: number; max_warning_log_id: number}>>(new Map());
+  const sinceCritRef = useRef<number>(0);
+  const sinceWarnRef = useRef<number>(0);
   const initializedRef = useRef(false);
 
   const playAlertSound = useCallback(() => {
@@ -95,21 +96,21 @@ export default function MonitorPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const data = await monitorAPI.list();
+      const resp = await monitorAPI.list({
+        since_critical_log_id: sinceCritRef.current || undefined,
+        since_warning_log_id: sinceWarnRef.current || undefined,
+      });
+      const data: MonitorRouter[] = resp.routers;
       setRouters(data);
 
-      // detectar nuevas alertas críticas/warning
-      const prev = prevAlertsRef.current;
+      // detectar nuevas alertas críticas/warning (counts del backend)
       if (initializedRef.current) {
         const newList: {name: string; critical: number; warning: number}[] = [];
         for (const r of data) {
-          const p = prev.get(r.id);
-          if (p) {
-            const dc = (r.max_critical_log_id || 0) - (p.max_critical_log_id || 0);
-            const dw = (r.max_warning_log_id || 0) - (p.max_warning_log_id || 0);
-            if (dc > 0 || dw > 0) {
-              newList.push({name: r.name, critical: dc, warning: dw});
-            }
+          const nc = r.new_critical_events || 0;
+          const nw = r.new_warning_events || 0;
+          if (nc > 0 || nw > 0) {
+            newList.push({name: r.name, critical: nc, warning: nw});
           }
         }
         if (newList.length > 0 && !mutedRef.current) {
@@ -123,11 +124,9 @@ export default function MonitorPage() {
       } else {
         initializedRef.current = true;
       }
-      // actualizar referencia
-      prev.clear();
-      for (const r of data) {
-        prev.set(r.id, {max_critical_log_id: r.max_critical_log_id || 0, max_warning_log_id: r.max_warning_log_id || 0});
-      }
+      // actualizar global since IDs
+      if (resp.max_critical_log_id > 0) sinceCritRef.current = resp.max_critical_log_id;
+      if (resp.max_warning_log_id > 0) sinceWarnRef.current = resp.max_warning_log_id;
     } catch {}
   }, []);
 

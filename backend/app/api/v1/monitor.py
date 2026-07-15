@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.core.database import get_db
@@ -46,8 +48,35 @@ def _alert_counts(db, visible_ids):
     return data
 
 
+def _new_event_counts(db, visible_ids, since_crit, since_warn):
+    """Cuenta EventLog con id > since_* por router. Retorna {router_id: {critical, warning}}."""
+    data = {}
+    if since_crit is not None:
+        q = db.query(EventLog.router_id, func.count(EventLog.id)).filter(
+            EventLog.severity == "critical", EventLog.id > since_crit
+        )
+        if visible_ids is not None:
+            q = q.filter(EventLog.router_id.in_(visible_ids))
+        for r_id, cnt in q.group_by(EventLog.router_id).all():
+            data.setdefault(r_id, {})["critical"] = cnt
+    if since_warn is not None:
+        q = db.query(EventLog.router_id, func.count(EventLog.id)).filter(
+            EventLog.severity == "warning", EventLog.id > since_warn
+        )
+        if visible_ids is not None:
+            q = q.filter(EventLog.router_id.in_(visible_ids))
+        for r_id, cnt in q.group_by(EventLog.router_id).all():
+            data.setdefault(r_id, {})["warning"] = cnt
+    return data
+
+
 @router.get("/")
-def get_monitor(db: Session = Depends(get_db), current_user: User = Depends(require_permission("monitor:view"))):
+def get_monitor(
+    since_critical_log_id: Optional[int] = Query(None),
+    since_warning_log_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("monitor:view")),
+):
     visible_ids = get_visible_router_ids(current_user, db)
 
     q = db.query(
@@ -60,30 +89,16 @@ def get_monitor(db: Session = Depends(get_db), current_user: User = Depends(requ
     routers = q.all()
 
     alert_data = _alert_counts(db, visible_ids)
+    new_data = _new_event_counts(db, visible_ids, since_critical_log_id, since_warning_log_id)
 
-    # max EventLog id por router y severidad (monotónico, nunca decrece)
-    max_crit = dict(
-        db.query(EventLog.router_id, func.max(EventLog.id))
-        .filter(EventLog.severity == "critical")
-        .group_by(EventLog.router_id).all()
-    ) if visible_ids is None else dict(
-        db.query(EventLog.router_id, func.max(EventLog.id))
-        .filter(EventLog.severity == "critical", EventLog.router_id.in_(visible_ids))
-        .group_by(EventLog.router_id).all()
-    )
-    max_warn = dict(
-        db.query(EventLog.router_id, func.max(EventLog.id))
-        .filter(EventLog.severity == "warning")
-        .group_by(EventLog.router_id).all()
-    ) if visible_ids is None else dict(
-        db.query(EventLog.router_id, func.max(EventLog.id))
-        .filter(EventLog.severity == "warning", EventLog.router_id.in_(visible_ids))
-        .group_by(EventLog.router_id).all()
-    )
+    # Global max IDs for next since_* params
+    global_max_crit = db.query(func.max(EventLog.id)).filter(EventLog.severity == "critical").scalar() or 0
+    global_max_warn = db.query(func.max(EventLog.id)).filter(EventLog.severity == "warning").scalar() or 0
 
     result = []
     for r in routers:
         ad = alert_data.get(r.id, {"total": 0, "critical": 0, "warning": 0})
+        nd = new_data.get(r.id, {})
         result.append({
             "id": r.id,
             "name": r.name,
@@ -92,11 +107,15 @@ def get_monitor(db: Session = Depends(get_db), current_user: User = Depends(requ
             "alert_count": ad.get("total", 0),
             "critical_count": ad.get("critical", 0),
             "warning_count": ad.get("warning", 0),
-            "max_critical_log_id": max_crit.get(r.id, 0) or 0,
-            "max_warning_log_id": max_warn.get(r.id, 0) or 0,
+            "new_critical_events": nd.get("critical", 0),
+            "new_warning_events": nd.get("warning", 0),
             "last_seen": utc_iso(r.last_seen),
             "group_id": r.group_id,
             "city": r.city,
         })
 
-    return result
+    return {
+        "routers": result,
+        "max_critical_log_id": global_max_crit,
+        "max_warning_log_id": global_max_warn,
+    }

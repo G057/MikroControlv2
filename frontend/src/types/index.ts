@@ -153,11 +153,17 @@ export interface MonitorRouter {
   alert_count: number;
   critical_count: number;
   warning_count: number;
-  max_critical_log_id: number;
-  max_warning_log_id: number;
+  new_critical_events: number;
+  new_warning_events: number;
   last_seen: string | null;
   group_id: number | null;
   city: string | null;
+}
+
+export interface MonitorResponse {
+  routers: MonitorRouter[];
+  max_critical_log_id: number;
+  max_warning_log_id: number;
 }
 
 export interface DashboardData {

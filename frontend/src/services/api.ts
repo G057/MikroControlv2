@@ -514,5 +514,11 @@ export const systemBackupAPI = {
 };
 
 export const monitorAPI = {
-  list: () => request<MonitorRouter[]>('/monitor/'),
+  list: (params?: { since_critical_log_id?: number; since_warning_log_id?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.since_critical_log_id !== undefined) query.set('since_critical_log_id', String(params.since_critical_log_id));
+    if (params?.since_warning_log_id !== undefined) query.set('since_warning_log_id', String(params.since_warning_log_id));
+    const qs = query.toString();
+    return request<MonitorResponse>(`/monitor/${qs ? '?' + qs : ''}`);
+  },
 };
