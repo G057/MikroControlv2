@@ -67,7 +67,7 @@ def _create_alert(db, router_id, alert_type, severity, title, message):
         Alert.is_resolved == False,
     ).first()
     if existing:
-        return
+        return False
     alert = Alert(
         router_id=router_id,
         alert_type=alert_type,
@@ -80,12 +80,8 @@ def _create_alert(db, router_id, alert_type, severity, title, message):
         db.flush()
     except Exception:
         db.rollback()
-        return
-
-    from app.api.v1.settings import notify
-    icon = "🔴" if severity == "critical" else "🟡" if severity == "warning" else "ℹ️"
-    tg_msg = f"{icon} <b>{title}</b>\n{message}"
-    notify(title, message, tg_msg, severity)
+        return False
+    return True
 
 
 def fetch_router_logs(db, router: Router) -> int:
@@ -145,10 +141,14 @@ def fetch_router_logs(db, router: Router) -> int:
             continue
 
         if severity in ("warning", "critical") and _should_alert(db):
+            from app.api.v1.settings import notify
             alert_type = "log_warning" if severity == "warning" else "log_critical"
             _create_alert(db, router.id, alert_type, severity,
                           f"{router.name}: {severity}",
                           message[:200] if message else "Sin detalle")
+            icon = "🔴" if severity == "critical" else "🟡"
+            tg_msg = f"{icon} <b>{router.name}: {severity}</b>\n{message[:200] if message else 'Sin detalle'}"
+            notify(f"{router.name}: {severity}", message[:200] if message else "Sin detalle", tg_msg, severity)
 
     return new_count
 
@@ -177,9 +177,14 @@ def fetch_all_logs():
                     router.is_online = False
                     router.last_seen = datetime.now(timezone.utc)
                     if was_online:
-                        _create_alert(db, router.id, "router_offline", "critical",
-                                      f"{router.name} se desconectó",
-                                      f"El router {router.name} dejó de responder (logs). Error: {e}")
+                        if _create_alert(db, router.id, "router_offline", "critical",
+                                         f"{router.name} se desconectó",
+                                         f"El router {router.name} dejó de responder (logs). Error: {e}"):
+                            from app.api.v1.settings import notify
+                            tg_msg = f"🔴 <b>{router.name} se desconectó</b>\nError: {e}"
+                            notify(f"{router.name} se desconectó",
+                                   f"El router {router.name} dejó de responder (logs). Error: {e}",
+                                   tg_msg, "critical")
             # Commit por router: transacción corta, libera el write-lock de SQLite
             # entre routers y evita retenerlo durante el I/O de red del siguiente.
             try:
