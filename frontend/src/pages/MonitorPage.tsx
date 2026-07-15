@@ -94,14 +94,16 @@ export default function MonitorPage() {
   }, []);
 
   const fetchData = useCallback(async () => {
+    const isFirst = !initializedRef.current;
+    initializedRef.current = true;
     try {
-      const resp = await monitorAPI.list(sinceEventLogRef.current || undefined);
-      const data: MonitorRouter[] = resp.routers;
-      setRouters(data);
+      const since = sinceEventLogRef.current || undefined;
+      const resp = await monitorAPI.list(since);
+      setRouters(resp.routers);
 
-      if (initializedRef.current) {
+      if (!isFirst) {
         const newList: {name: string; critical: number; warning: number}[] = [];
-        for (const r of data) {
+        for (const r of resp.routers) {
           const nc = r.new_critical_events || 0;
           const nw = r.new_warning_events || 0;
           if (nc > 0 || nw > 0) {
@@ -116,8 +118,6 @@ export default function MonitorPage() {
           });
           playAlertSound();
         }
-      } else {
-        initializedRef.current = true;
       }
       if (resp.max_event_log_id > 0) sinceEventLogRef.current = resp.max_event_log_id;
     } catch {}
