@@ -259,47 +259,87 @@ def counts_by_severity(
     excl_filters = event_filter.filter_rules_for_role(all_rules, current_user.role)
     visible_ids = get_visible_router_ids(current_user, db)
     router_blocked = visible_ids is not None and router_id is not None and int(router_id) not in visible_ids
+    can_use_sql = see_all and not excl_filters and not router_blocked
 
     counts = {"critical": 0, "warning": 0, "info": 0, "unresolved": 0}
 
     if source != "health":
-        q = db.query(EventLog)
-        if router_id:
-            q = q.filter(EventLog.router_id == router_id)
-        if search:
-            q = q.filter(EventLog.message.contains(search))
-        if visible_ids is not None:
-            q = q.filter(EventLog.router_id.in_(visible_ids))
-        if see_all or allowed_cats:
-            if not router_blocked:
-                for row in q.all():
-                    if event_filter.is_event_excluded(row.message, row.topics, excl_filters):
-                        continue
-                    if allowed_cats and not see_all and event_filter.classify_category(row.topics) not in allowed_cats:
-                        continue
-                    if row.severity in counts:
-                        counts[row.severity] += 1
+        if can_use_sql:
+            from sqlalchemy import func as sa_func
+            q = db.query(EventLog.severity, sa_func.count(EventLog.id))
+            if router_id:
+                q = q.filter(EventLog.router_id == router_id)
+            if search:
+                q = q.filter(EventLog.message.contains(search))
+            if visible_ids is not None:
+                q = q.filter(EventLog.router_id.in_(visible_ids))
+            for sev, cnt in q.group_by(EventLog.severity).all():
+                if sev in counts:
+                    counts[sev] = cnt
+        else:
+            q = db.query(EventLog)
+            if router_id:
+                q = q.filter(EventLog.router_id == router_id)
+            if search:
+                q = q.filter(EventLog.message.contains(search))
+            if visible_ids is not None:
+                q = q.filter(EventLog.router_id.in_(visible_ids))
+            if see_all or allowed_cats:
+                if not router_blocked:
+                    batch_size = 1000
+                    offset = 0
+                    while True:
+                        rows = q.order_by(EventLog.id).limit(batch_size).offset(offset).all()
+                        if not rows:
+                            break
+                        for row in rows:
+                            if event_filter.is_event_excluded(row.message, row.topics, excl_filters):
+                                continue
+                            if allowed_cats and not see_all and event_filter.classify_category(row.topics) not in allowed_cats:
+                                continue
+                            if row.severity in counts:
+                                counts[row.severity] += 1
+                        offset += batch_size
 
     if source != "router":
-        aq = db.query(Alert)
-        if router_id:
-            aq = aq.filter(Alert.router_id == router_id)
-        if is_resolved is not None:
-            aq = aq.filter(Alert.is_resolved == is_resolved)
-        for a in aq.all():
-            if router_blocked:
-                continue
-            if visible_ids is not None and a.router_id is not None and a.router_id not in visible_ids:
-                continue
-            alert_msg = a.title + (f" — {a.message}" if a.message else "")
-            if event_filter.is_event_excluded(alert_msg, a.alert_type, excl_filters):
-                continue
-            if allowed_cats and not see_all and event_filter.classify_alert_category(a.alert_type) not in allowed_cats:
-                continue
-            if a.severity in counts:
-                counts[a.severity] += 1
-            if not a.is_resolved:
-                counts["unresolved"] += 1
+        if can_use_sql:
+            from sqlalchemy import func as sa_func
+            aq = db.query(Alert.severity, sa_func.count(Alert.id))
+            if router_id:
+                aq = aq.filter(Alert.router_id == router_id)
+            if is_resolved is not None:
+                aq = aq.filter(Alert.is_resolved == is_resolved)
+            if visible_ids is not None:
+                aq = aq.filter(Alert.router_id.in_(visible_ids))
+            for sev, cnt in aq.group_by(Alert.severity).all():
+                if sev in counts:
+                    counts[sev] = cnt
+            unresolved_q = db.query(sa_func.count(Alert.id)).filter(Alert.is_resolved == False)
+            if router_id:
+                unresolved_q = unresolved_q.filter(Alert.router_id == router_id)
+            if visible_ids is not None:
+                unresolved_q = unresolved_q.filter(Alert.router_id.in_(visible_ids))
+            counts["unresolved"] = unresolved_q.scalar() or 0
+        else:
+            aq = db.query(Alert)
+            if router_id:
+                aq = aq.filter(Alert.router_id == router_id)
+            if is_resolved is not None:
+                aq = aq.filter(Alert.is_resolved == is_resolved)
+            for a in aq.all():
+                if router_blocked:
+                    continue
+                if visible_ids is not None and a.router_id is not None and a.router_id not in visible_ids:
+                    continue
+                alert_msg = a.title + (f" — {a.message}" if a.message else "")
+                if event_filter.is_event_excluded(alert_msg, a.alert_type, excl_filters):
+                    continue
+                if allowed_cats and not see_all and event_filter.classify_alert_category(a.alert_type) not in allowed_cats:
+                    continue
+                if a.severity in counts:
+                    counts[a.severity] += 1
+                if not a.is_resolved:
+                    counts["unresolved"] += 1
 
     return counts
 

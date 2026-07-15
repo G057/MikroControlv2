@@ -26,4 +26,6 @@ class EventLog(Base):
         Index("ix_event_logs_router_id_id", "router_id", "id"),
         # Filtro por severidad + orden por id.
         Index("ix_event_logs_severity_id", "severity", "id"),
+        # Filtro por severidad + router + orden por id (counts).
+        Index("ix_event_logs_severity_router_id", "severity", "router_id", "id"),
     )
