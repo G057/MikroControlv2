@@ -5,7 +5,7 @@ import EventFilterRulesEditor from '../components/EventFilterRulesEditor';
 import ErrorBoundary from '../components/ErrorBoundary';
 import {
   Settings, Users, Mail, MessageCircle, Bell, Download, Plus, Trash2,
-  Save, Send, CheckCircle, XCircle, Eye, EyeOff, Shield, Clock, Activity, Filter, Image, RotateCcw, RefreshCw,
+  Save, Send, CheckCircle, XCircle, Eye, EyeOff, Shield, Clock, Activity, Filter, Image, RotateCcw, RefreshCw, Radio,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatDateTime, getTimezone, setTimezone } from '../utils/date';
@@ -662,6 +662,54 @@ function MonitoringTab({ settings, onSave, c }: { settings: SystemSettings; onSa
   );
 }
 
+function SyslogTab({ settings, onSave, c }: { settings: SystemSettings; onSave: (d: Partial<SystemSettings>) => void; c: any }) {
+  const [enabled, setEnabled] = useState(settings.syslog_enabled === 'true');
+  const [port, setPort] = useState(Number(settings.syslog_port) || 5140);
+  const [queueSize, setQueueSize] = useState(Number(settings.syslog_queue_max_size) || 500);
+  const [workers, setWorkers] = useState(Number(settings.syslog_worker_count) || 1);
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h3 className="text-sm font-semibold mb-1" style={{ color: c.textPrimary }}>Receptor Syslog</h3>
+        <p className="text-xs" style={{ color: c.textMuted }}>Canal principal de eventos RouterOS en tiempo real. Al guardar, el receptor se inicia o detiene automáticamente.</p>
+      </div>
+      <div className="rounded-lg p-4" style={{ background: c.bgPage, border: `1px solid ${c.border}` }}>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <span className="text-sm font-semibold" style={{ color: c.textPrimary }}>Recibir Syslog UDP</span>
+            <p className="text-xs mt-1" style={{ color: c.textMuted }}>Guarda eventos no asociados y descartes de cola para diagnóstico.</p>
+          </div>
+          <Toggle value={enabled} onChange={setEnabled} c={c} />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {[
+          { label: 'Puerto UDP', value: port, set: setPort, min: 1024, max: 65535 },
+          { label: 'Capacidad de cola', value: queueSize, set: setQueueSize, min: 100, max: 10000 },
+          { label: 'Workers', value: workers, set: setWorkers, min: 1, max: 16 },
+        ].map(item => (
+          <label key={item.label} className="rounded-lg p-3 text-xs" style={{ background: c.bgPage, border: `1px solid ${c.border}`, color: c.textSecondary }}>
+            <span className="block mb-2 font-medium">{item.label}</span>
+            <input type="number" min={item.min} max={item.max} value={item.value}
+              onChange={e => item.set(Math.max(item.min, Math.min(item.max, Number(e.target.value) || item.min)))}
+              className="input w-full text-center text-sm font-mono py-1" disabled={!enabled} />
+          </label>
+        ))}
+      </div>
+      <div className="rounded-lg p-4 text-xs leading-5" style={{ background: c.bgPage, border: `1px solid ${c.border}`, color: c.textMuted }}>
+        <strong style={{ color: c.textSecondary }}>RouterOS:</strong> creá una acción remota UDP hacia la IP del servidor y el puerto configurado, luego asociá los topics deseados a esa acción. No uses Syslog para detectar routers offline: esa tarea corresponde a Health Check.
+      </div>
+      <button onClick={() => onSave({
+        syslog_enabled: enabled ? 'true' : 'false', syslog_port: String(port),
+        syslog_queue_max_size: String(queueSize), syslog_worker_count: String(workers),
+      })} className="btn-primary text-sm">
+        <Save className="w-4 h-4 inline mr-1" />Guardar Syslog
+      </button>
+    </div>
+  );
+}
+
 
 function ClockTab({ c }: { c: any }) {
   const [tz, setTz] = useState(getTimezone());
@@ -969,7 +1017,7 @@ function EventFiltersTab({ c }: { c: any }) {
 
 
 export default function SystemSettingsPage() {
-  const [tab, setTab] = useState<'operators' | 'smtp' | 'telegram' | 'notifications' | 'monitoring' | 'clock' | 'backup' | 'eventfilters' | 'logo'>('operators');
+  const [tab, setTab] = useState<'operators' | 'smtp' | 'telegram' | 'notifications' | 'monitoring' | 'syslog' | 'clock' | 'backup' | 'eventfilters' | 'logo'>('operators');
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const { c } = useTheme();
 
@@ -989,6 +1037,7 @@ export default function SystemSettingsPage() {
     { id: 'telegram' as const, label: 'Telegram', icon: MessageCircle },
     { id: 'notifications' as const, label: 'Notificaciones', icon: Bell },
     { id: 'monitoring' as const, label: 'Monitoreo', icon: Activity },
+    { id: 'syslog' as const, label: 'Syslog', icon: Radio },
     { id: 'clock' as const, label: 'Reloj', icon: Clock },
     { id: 'backup' as const, label: 'Backup', icon: Download },
     { id: 'eventfilters' as const, label: 'Eventos', icon: Filter },
@@ -1015,6 +1064,7 @@ export default function SystemSettingsPage() {
         {tab === 'telegram' && settings && <ErrorBoundary key="telegram"><TelegramTab settings={settings} onSave={handleSave} c={c} /></ErrorBoundary>}
         {tab === 'notifications' && settings && <ErrorBoundary key="notifications"><NotificationsTab settings={settings} onSave={handleSave} c={c} /></ErrorBoundary>}
         {tab === 'monitoring' && settings && <ErrorBoundary key="monitoring"><MonitoringTab settings={settings} onSave={handleSave} c={c} /></ErrorBoundary>}
+        {tab === 'syslog' && settings && <ErrorBoundary key="syslog"><SyslogTab settings={settings} onSave={handleSave} c={c} /></ErrorBoundary>}
         {tab === 'clock' && <ErrorBoundary key="clock"><ClockTab c={c} /></ErrorBoundary>}
         {tab === 'backup' && <ErrorBoundary key="backup"><BackupTab c={c} /></ErrorBoundary>}
         {tab === 'eventfilters' && <ErrorBoundary key="eventfilters"><EventFiltersTab c={c} /></ErrorBoundary>}

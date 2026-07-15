@@ -224,6 +224,12 @@ def update_settings(
               details={"fields": list(updates.keys())},
               user_id=current_user.id, ip_address=req.client.host if req.client else None)
     db.commit()
+    if "syslog_enabled" in updates:
+        from app.services.syslog_receiver import start_syslog_receiver, stop_syslog_receiver
+        if updates["syslog_enabled"] == "true":
+            start_syslog_receiver()
+        else:
+            stop_syslog_receiver()
     return _get_all_masked(db)
 
 
