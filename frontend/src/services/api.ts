@@ -263,6 +263,7 @@ export interface SystemSettings {
   telegram_bot_token: string; telegram_chat_id: string;
   notify_router_offline: string; notify_router_online: string;
   notify_critical_alert: string; notify_warning_alert: string;
+  notify_repeat_critical: string; notify_repeat_warning: string;
   notify_backup_complete: string; notify_high_cpu: string; notify_high_temp: string;
   notify_email_enabled: string; notify_telegram_enabled: string;
   health_check_interval: string; log_fetch_interval: string; history_fetch_interval: string;

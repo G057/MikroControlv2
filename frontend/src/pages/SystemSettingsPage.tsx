@@ -267,6 +267,11 @@ function NotificationsTab({ settings, onSave, c }: { settings: SystemSettings; o
     { key: 'notify_high_temp', label: 'Temperatura alta', desc: 'Cuando la temperatura es elevada' },
   ] as const;
 
+  const repeatToggles = [
+    { key: 'notify_repeat_critical', label: 'Repetir críticas', desc: 'Re-notificar cada vez que aparezca un log crítico aunque la alerta ya exista' },
+    { key: 'notify_repeat_warning', label: 'Repetir advertencias', desc: 'Re-notificar cada vez que aparezca un log warning aunque la alerta ya exista' },
+  ] as const;
+
   const handleToggle = (key: string) => {
     const next = { ...form, [key]: form[key as keyof SystemSettings] === 'true' ? 'false' : 'true' };
     setForm(next);
@@ -277,6 +282,17 @@ function NotificationsTab({ settings, onSave, c }: { settings: SystemSettings; o
     <div className="space-y-3">
       <p className="text-sm mb-3" style={{ color: c.textSecondary }}>Elegí qué eventos generan notificaciones por email y/o Telegram.</p>
       {toggles.map(t => (
+        <div key={t.key} className="card !p-3 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium" style={{ color: c.textPrimary }}>{t.label}</p>
+            <p className="text-[11px]" style={{ color: c.textMuted }}>{t.desc}</p>
+          </div>
+          <Toggle value={form[t.key] === 'true'} onChange={() => handleToggle(t.key)} c={c} />
+        </div>
+      ))}
+      <p className="text-sm font-semibold mt-4 pt-4 border-t" style={{ color: c.textPrimary, borderColor: c.border }}>Re-notificaciones</p>
+      <p className="text-xs mb-2" style={{ color: c.textMuted }}>Cuando un log warning/critical aparece y ya existe una alerta sin resolver, ¿volver a notificar?</p>
+      {repeatToggles.map(t => (
         <div key={t.key} className="card !p-3 flex items-center justify-between">
           <div>
             <p className="text-sm font-medium" style={{ color: c.textPrimary }}>{t.label}</p>

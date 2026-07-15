@@ -141,14 +141,16 @@ def fetch_router_logs(db, router: Router) -> int:
             continue
 
         if severity in ("warning", "critical") and _should_alert(db):
-            from app.api.v1.settings import notify
+            from app.api.v1.settings import notify, get_setting
             alert_type = "log_warning" if severity == "warning" else "log_critical"
-            _create_alert(db, router.id, alert_type, severity,
-                          f"{router.name}: {severity}",
-                          message[:200] if message else "Sin detalle")
-            icon = "🔴" if severity == "critical" else "🟡"
-            tg_msg = f"{icon} <b>{router.name}: {severity}</b>\n{message[:200] if message else 'Sin detalle'}"
-            notify(f"{router.name}: {severity}", message[:200] if message else "Sin detalle", tg_msg, severity)
+            created = _create_alert(db, router.id, alert_type, severity,
+                                    f"{router.name}: {severity}",
+                                    message[:200] if message else "Sin detalle")
+            repeat_key = "notify_repeat_critical" if severity == "critical" else "notify_repeat_warning"
+            if created or get_setting(db, repeat_key, "true") == "true":
+                icon = "🔴" if severity == "critical" else "🟡"
+                tg_msg = f"{icon} <b>{router.name}: {severity}</b>\n{message[:200] if message else 'Sin detalle'}"
+                notify(f"{router.name}: {severity}", message[:200] if message else "Sin detalle", tg_msg, severity)
 
     return new_count
 

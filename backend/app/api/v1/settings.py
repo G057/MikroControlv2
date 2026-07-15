@@ -41,6 +41,8 @@ DEFAULTS = {
     "notify_router_online": "true",
     "notify_critical_alert": "true",
     "notify_warning_alert": "false",
+    "notify_repeat_critical": "true",
+    "notify_repeat_warning": "true",
     "notify_backup_complete": "false",
     "notify_high_cpu": "false",
     "notify_high_temp": "false",
@@ -135,6 +137,8 @@ class SettingsUpdate(BaseModel):
     notify_router_online: Optional[str] = None
     notify_critical_alert: Optional[str] = None
     notify_warning_alert: Optional[str] = None
+    notify_repeat_critical: Optional[str] = None
+    notify_repeat_warning: Optional[str] = None
     notify_backup_complete: Optional[str] = None
     notify_high_cpu: Optional[str] = None
     notify_high_temp: Optional[str] = None
