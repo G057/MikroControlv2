@@ -63,6 +63,7 @@ export default function MonitorPage() {
   const [alertPopups, setAlertPopups] = useState<MonitorNotification[]>([]);
   const [muted, setMuted] = useState(() => localStorage.getItem('monitor_mute') === 'true');
   const [popupsPaused, setPopupsPaused] = useState(false);
+  const [audioStatus, setAudioStatus] = useState<'ready' | 'blocked' | 'error'>('blocked');
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
   const sinceEventLogRef = useRef<number>(0);
@@ -70,6 +71,9 @@ export default function MonitorPage() {
   const notificationCursorRef = useRef(0);
   const receivedNotificationIds = useRef(new Set<number>());
   const playedNotificationIds = useRef(new Set<number>());
+  const pollingRef = useRef(false);
+  const popupsPausedRef = useRef(popupsPaused);
+  popupsPausedRef.current = popupsPaused;
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const warmedRef = useRef(false);
@@ -99,6 +103,10 @@ export default function MonitorPage() {
         audioCtxRef.current = ctx;
       }
       if (ctx.state === 'suspended') await ctx.resume();
+      if (ctx.state !== 'running') {
+        setAudioStatus('blocked');
+        return false;
+      }
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
@@ -119,10 +127,23 @@ export default function MonitorPage() {
       gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
       osc2.start(ctx.currentTime + 0.15);
       osc2.stop(ctx.currentTime + 0.5);
-    } catch (error) { console.warn('Notification audio failed', error); }
+      setAudioStatus('ready');
+      return true;
+    } catch (error) {
+      setAudioStatus('error');
+      console.warn('Notification audio failed', error);
+      return false;
+    }
   }, []);
 
+  const enableAndTestSound = async () => {
+    const played = await playAlertSound();
+    if (!played) setAudioStatus('blocked');
+  };
+
   const fetchData = useCallback(async () => {
+    if (pollingRef.current) return;
+    pollingRef.current = true;
     const isFirst = !initializedRef.current;
     initializedRef.current = true;
     try {
@@ -138,7 +159,7 @@ export default function MonitorPage() {
         // The first load intentionally excludes acknowledged history, but pending
         // notifications still require delivery after a reload or brief disconnect.
         const displayable = fresh;
-        if (!popupsPaused && displayable.length) {
+        if (!popupsPausedRef.current && displayable.length) {
           setAlertPopups(prev => {
             const critical = [...prev.filter(item => item.severity === 'critical'), ...fresh.filter(item => item.popupRequired && item.severity === 'critical')];
             const other = [...prev.filter(item => item.severity !== 'critical'), ...displayable.filter(item => item.popupRequired && item.severity !== 'critical')].slice(-50);
@@ -153,11 +174,12 @@ export default function MonitorPage() {
         }
       }
     } catch (error) { console.warn('Monitor polling failed', error); }
+    finally { pollingRef.current = false; }
   }, []);
 
   useEffect(() => {
     fetchData();
-    const iv = setInterval(fetchData, 30000);
+    const iv = setInterval(fetchData, 5000);
     return () => clearInterval(iv);
   }, [fetchData]);
 
@@ -323,6 +345,9 @@ export default function MonitorPage() {
                 {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
               </button>
             )}
+            <button onClick={() => void enableAndTestSound()} className="px-2 py-1 rounded-lg text-xs" style={{ color: audioStatus === 'ready' ? c.green : c.orange, border: `1px solid ${c.border}` }} title="Habilitar y probar sonido">
+              {audioStatus === 'ready' ? 'Sonido activo' : 'Activar sonido'}
+            </button>
             <button onClick={() => setPopupsPaused(!popupsPaused)} className="px-2 py-1 rounded-lg text-xs" style={{ color: popupsPaused ? c.textMuted : c.accent, border: `1px solid ${c.border}` }} title="Pausar o reanudar popups">
               {popupsPaused ? 'Reanudar' : 'Pausar'}
             </button>
