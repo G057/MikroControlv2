@@ -40,7 +40,7 @@ DEFAULTS = {
     "notify_router_offline": "true",
     "notify_router_online": "true",
     "notify_critical_alert": "true",
-    "notify_warning_alert": "false",
+    "notify_warning_alert": "true",
     "notify_repeat_critical": "true",
     "notify_repeat_warning": "true",
     "notify_backup_complete": "false",
@@ -67,6 +67,8 @@ DEFAULTS = {
     "router_backup_type": "export",
     "router_backup_retention_days": "30",
     "router_backup_retention_count": "60",
+    "syslog_enabled": "false",
+    "syslog_port": "5140",
 }
 
 # Claves cuyo valor es un secreto: se cifran en reposo y se enmascaran al leer.
@@ -163,6 +165,8 @@ class SettingsUpdate(BaseModel):
     router_backup_type: Optional[str] = None
     router_backup_retention_days: Optional[str] = None
     router_backup_retention_count: Optional[str] = None
+    syslog_enabled: Optional[str] = None
+    syslog_port: Optional[str] = None
 
 
 class UserCreate(BaseModel):

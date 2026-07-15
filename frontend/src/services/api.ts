@@ -279,6 +279,8 @@ export interface SystemSettings {
   router_backup_type: string;
   router_backup_retention_days: string;
   router_backup_retention_count: string;
+  syslog_enabled: string;
+  syslog_port: string;
 }
 
 export interface OperatorUser {

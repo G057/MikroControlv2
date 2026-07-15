@@ -122,6 +122,9 @@ def on_startup():
     from app.services.log_fetcher import start_log_fetcher
     start_log_fetcher()
 
+    from app.services.syslog_receiver import start_syslog_receiver
+    start_syslog_receiver()
+
     from app.api.v1.system_backup import start_backup_scheduler
     start_backup_scheduler()
 

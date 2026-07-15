@@ -232,13 +232,16 @@ def fetch_all_logs():
 
 def _run_log_loop():
     while not _stop_event.is_set():
+        from app.api.v1.settings import get_interval
+        interval = get_interval("log_fetch_interval", 120)
+        next_run = time.time() + interval
         try:
             fetch_all_logs()
         except Exception as e:
             logger.error(f"Log fetch loop error: {e}")
-        from app.api.v1.settings import get_interval
-        interval = get_interval("log_fetch_interval", 120)
-        _stop_event.wait(interval)
+        remaining = next_run - time.time()
+        if remaining > 0:
+            _stop_event.wait(remaining)
 
 
 def start_log_fetcher():
