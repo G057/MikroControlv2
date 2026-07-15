@@ -69,20 +69,20 @@ export default function MonitorPage() {
 
   const audioCtxRef = useRef<AudioContext | null>(null);
 
-  const playAlertSound = useCallback(async () => {
+  const playAlertSound = useCallback(() => {
     try {
       let ctx = audioCtxRef.current;
-      if (!ctx || ctx.state === 'closed') {
+      if (!ctx) {
         ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
         audioCtxRef.current = ctx;
       }
-      if (ctx.state === 'suspended') await ctx.resume();
+      if (ctx.state === 'suspended') ctx.resume();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.type = 'sine';
-      osc.frequency.value = 880;
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
       gain.gain.setValueAtTime(0.5, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
       osc.start(ctx.currentTime);
@@ -92,7 +92,7 @@ export default function MonitorPage() {
       osc2.connect(gain2);
       gain2.connect(ctx.destination);
       osc2.type = 'sine';
-      osc2.frequency.value = 660;
+      osc2.frequency.setValueAtTime(660, ctx.currentTime + 0.15);
       gain2.gain.setValueAtTime(0.4, ctx.currentTime + 0.15);
       gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
       osc2.start(ctx.currentTime + 0.15);
