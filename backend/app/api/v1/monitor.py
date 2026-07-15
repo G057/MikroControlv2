@@ -1,3 +1,5 @@
+from datetime import datetime, timezone, timedelta
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -8,6 +10,7 @@ from app.core.datetime_utils import utc_iso
 from app.models.user import User
 from app.models.router import Router
 from app.models.alert import Alert
+from app.models.event_log import EventLog
 
 router = APIRouter()
 
@@ -45,6 +48,22 @@ def _alert_counts(db, visible_ids):
     return data
 
 
+def _recent_event_counts(db, visible_ids):
+    """Cuenta EventLog con severity warning/critical en los últimos 60s."""
+    since = datetime.now(timezone.utc) - timedelta(seconds=60)
+    data = {}
+    for sev in ("warning", "critical"):
+        q = db.query(EventLog.router_id, func.count(EventLog.id)).filter(
+            EventLog.severity == sev,
+            EventLog.first_seen >= since,
+        )
+        if visible_ids is not None:
+            q = q.filter(EventLog.router_id.in_(visible_ids))
+        for r_id, cnt in q.group_by(EventLog.router_id).all():
+            data.setdefault(r_id, {})[sev] = cnt
+    return data
+
+
 @router.get("/")
 def get_monitor(db: Session = Depends(get_db), current_user: User = Depends(require_permission("monitor:view"))):
     visible_ids = get_visible_router_ids(current_user, db)
@@ -59,10 +78,12 @@ def get_monitor(db: Session = Depends(get_db), current_user: User = Depends(requ
     routers = q.all()
 
     alert_data = _alert_counts(db, visible_ids)
+    recent_data = _recent_event_counts(db, visible_ids)
 
     result = []
     for r in routers:
         ad = alert_data.get(r.id, {"total": 0, "critical": 0, "warning": 0})
+        rd = recent_data.get(r.id, {})
         result.append({
             "id": r.id,
             "name": r.name,
@@ -71,6 +92,8 @@ def get_monitor(db: Session = Depends(get_db), current_user: User = Depends(requ
             "alert_count": ad.get("total", 0),
             "critical_count": ad.get("critical", 0),
             "warning_count": ad.get("warning", 0),
+            "recent_critical_events": rd.get("critical", 0),
+            "recent_warning_events": rd.get("warning", 0),
             "last_seen": utc_iso(r.last_seen),
             "group_id": r.group_id,
             "city": r.city,

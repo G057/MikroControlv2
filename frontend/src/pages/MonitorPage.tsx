@@ -105,8 +105,8 @@ export default function MonitorPage() {
         for (const r of data) {
           const p = prev.get(r.id);
           if (p) {
-            const dc = (r.critical_count || 0) - (p.critical || 0);
-            const dw = (r.warning_count || 0) - (p.warning || 0);
+            const dc = (r.recent_critical_events || 0) - (p.critical || 0);
+            const dw = (r.recent_warning_events || 0) - (p.warning || 0);
             if (dc > 0 || dw > 0) {
               newList.push({name: r.name, critical: dc, warning: dw});
             }
@@ -126,7 +126,7 @@ export default function MonitorPage() {
       // actualizar referencia
       prev.clear();
       for (const r of data) {
-        prev.set(r.id, {critical: r.critical_count || 0, warning: r.warning_count || 0});
+        prev.set(r.id, {critical: r.recent_critical_events || 0, warning: r.recent_warning_events || 0});
       }
     } catch {}
   }, []);

@@ -153,6 +153,8 @@ export interface MonitorRouter {
   alert_count: number;
   critical_count: number;
   warning_count: number;
+  recent_critical_events: number;
+  recent_warning_events: number;
   last_seen: string | null;
   group_id: number | null;
   city: string | null;
