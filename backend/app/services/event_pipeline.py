@@ -32,6 +32,10 @@ def classify(topics: str, message: str, severity: str | None = None) -> tuple[st
         return "interface_down", severity or "warning"
     if "interface" in topic_set and "up" in text:
         return "interface_up", "recovery"
+    if "alerta" in text and ("caida" in text or "caída" in text):
+        return "ping_loss", severity or "warning"
+    if "phase1 negotiation failed" in text:
+        return "vpn_down", severity or "critical"
     if "account" in topic_set and ("failure" in text or "failed" in text):
         return "login_failure", severity or "warning"
     if "critical" in topic_set or "error" in topic_set:

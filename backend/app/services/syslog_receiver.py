@@ -17,6 +17,11 @@ _worker_threads = []
 _stop_event = threading.Event()
 _msg_queue = None
 
+_PRI_SEVERITY = {
+    0: "critical", 1: "critical", 2: "critical", 3: "critical",
+    4: "warning", 5: "info", 6: "info", 7: "info",
+}
+
 
 def _setting_int(key, default):
     from app.api.v1.settings import get_setting
@@ -43,7 +48,11 @@ def _parse_syslog(msg_bytes: bytes):
     text = msg_bytes.decode("utf-8", errors="replace").replace("\x00", " ").strip()
     if not text:
         raise ValueError("empty_message")
-    body = re.sub(r"^<(\d{1,3})>\s*", "", text)
+    priority = 13
+    pri_match = re.match(r"^<(\d{1,3})>\s*", text)
+    if pri_match:
+        priority = int(pri_match.group(1))
+    body = re.sub(r"^<\d{1,3}>\s*", "", text)
     timestamp = ""
     match = re.match(r"((?:\d{4}-\d\d-\d\d[T ])?\d{1,2}:\d\d:\d\d|\w{3}\s+\d{1,2}\s+\d\d:\d\d:\d\d)\s+", body)
     if match:
@@ -53,8 +62,13 @@ def _parse_syslog(msg_bytes: bytes):
         raise ValueError("missing_hostname")
     hostname, rest = host.group(1)[:200], host.group(2)
     topic = re.match(r"([\w,-]{1,200}):\s*(.*)$", rest)
-    return {"hostname": hostname, "topics": topic.group(1) if topic else "",
+    topics = topic.group(1) if topic else ""
+    # RouterOS BSD Syslog can repeat the identity before its message.
+    if topics.lower() == hostname.lower():
+        topics = ""
+    return {"hostname": hostname, "topics": topics,
             "message": (topic.group(2) if topic else rest)[:8000], "timestamp": timestamp,
+            "severity": _PRI_SEVERITY.get(priority % 8, "info"),
             "raw_message": text[:8000]}
 
 
@@ -96,7 +110,7 @@ def _handle_message(msg_bytes, source_ip):
             db.commit()
             return
         event, created, _, _ = ingest_event(db, NormalizedEvent(router.id, router.name, "syslog", parsed["topics"],
-            parsed["message"], ros_time=parsed["timestamp"], raw_message=parsed["raw_message"],
+            parsed["message"], severity=parsed["severity"], ros_time=parsed["timestamp"], raw_message=parsed["raw_message"],
             metadata={"source_ip": source_ip, "parsed_hostname": parsed["hostname"]}))
         _metric(db, "syslog_parsed_total")
         if not created:
