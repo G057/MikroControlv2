@@ -138,7 +138,7 @@ export default function MonitorPage() {
 
   const filteredRouters = useMemo(() => {
     return routers.filter(r => {
-      if (statusFilter === 'online' && (!r.is_online || r.alert_count > 0)) return false;
+      if (statusFilter === 'online' && !r.is_online) return false;
       if (statusFilter === 'warning' && !(r.is_online && r.alert_count > 0)) return false;
       if (statusFilter === 'offline' && r.is_online) return false;
       if (search) {
@@ -154,7 +154,7 @@ export default function MonitorPage() {
 
   const summary = useMemo(() => ({
     total: routers.length,
-    online: routers.filter(r => r.is_online && r.alert_count === 0).length,
+    online: routers.filter(r => r.is_online).length,
     warnings: routers.filter(r => r.is_online && r.alert_count > 0).length,
     offline: routers.filter(r => !r.is_online).length,
     activeAlerts: routers.reduce((s, r) => s + r.alert_count, 0),
