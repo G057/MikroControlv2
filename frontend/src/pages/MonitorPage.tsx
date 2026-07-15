@@ -59,12 +59,13 @@ export default function MonitorPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [filterOpen, setFilterOpen] = useState(false);
-  const [newAlerts, setNewAlerts] = useState<{routers: string[]; critical: number; warning: number} | null>(null);
+  const [alertPopups, setAlertPopups] = useState<{id: number; routerName: string; critical: number; warning: number}[]>([]);
   const [muted, setMuted] = useState(() => localStorage.getItem('monitor_mute') === 'true');
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
   const sinceEventLogRef = useRef<number>(0);
   const initializedRef = useRef(false);
+  const popupIdRef = useRef(0);
 
   const playAlertSound = useCallback(() => {
     try {
@@ -102,20 +103,17 @@ export default function MonitorPage() {
       setRouters(resp.routers);
 
       if (!isFirst) {
-        const newList: {name: string; critical: number; warning: number}[] = [];
+        const fresh: {id: number; routerName: string; critical: number; warning: number}[] = [];
         for (const r of resp.routers) {
           const nc = r.new_critical_events || 0;
           const nw = r.new_warning_events || 0;
           if (nc > 0 || nw > 0) {
-            newList.push({name: r.name, critical: nc, warning: nw});
+            popupIdRef.current += 1;
+            fresh.push({id: popupIdRef.current, routerName: r.name, critical: nc, warning: nw});
           }
         }
-        if (newList.length > 0 && !mutedRef.current) {
-          setNewAlerts({
-            routers: newList.map(x => x.name),
-            critical: newList.reduce((s, x) => s + x.critical, 0),
-            warning: newList.reduce((s, x) => s + x.warning, 0),
-          });
+        if (fresh.length > 0 && !mutedRef.current) {
+          setAlertPopups(prev => [...prev, ...fresh]);
           playAlertSound();
         }
       }
@@ -128,13 +126,6 @@ export default function MonitorPage() {
     const iv = setInterval(fetchData, 30000);
     return () => clearInterval(iv);
   }, [fetchData]);
-
-  // auto-dismiss popup tras 8s
-  useEffect(() => {
-    if (!newAlerts) return;
-    const t = setTimeout(() => setNewAlerts(null), 8000);
-    return () => clearTimeout(t);
-  }, [newAlerts]);
 
   const filteredRouters = useMemo(() => {
     return routers.filter(r => {
@@ -294,7 +285,7 @@ export default function MonitorPage() {
             </div>
 
             {hasPermission('monitor:mute') && (
-              <button onClick={() => { setMuted(!muted); localStorage.setItem('monitor_mute', String(!muted)); if (!muted) setNewAlerts(null); }} className="p-2 rounded-lg transition-colors" style={{ color: muted ? c.textMuted : c.accent }} title={muted ? 'Silencio activado' : 'Silenciar alertas'}>
+              <button onClick={() => { setMuted(!muted); localStorage.setItem('monitor_mute', String(!muted)); if (!muted) setAlertPopups([]); }} className="p-2 rounded-lg transition-colors" style={{ color: muted ? c.textMuted : c.accent }} title={muted ? 'Silencio activado' : 'Silenciar alertas'}>
                 {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
               </button>
             )}
@@ -457,35 +448,24 @@ export default function MonitorPage() {
         </div>
       </div>
 
-      {/* Popup de alertas críticas/warning */}
-      {newAlerts && !mutedRef.current && (
-        <div className="fixed top-4 right-4 z-50 w-96 rounded-xl p-4 shadow-2xl animate-slide-down" style={{ background: c.bgCard, border: `1px solid ${newAlerts.critical > 0 ? c.red : c.yellow}` }}>
+      {/* Popups de alertas — uno por router, sin auto-dismiss */}
+      {alertPopups.filter(p => !mutedRef.current).map((p, i) => (
+        <div key={p.id} className="fixed right-4 z-50 w-96 rounded-xl p-4 shadow-2xl animate-slide-down" style={{ top: 16 + i * 150, background: c.bgCard, border: `1px solid ${p.critical > 0 ? c.red : c.yellow}` }}>
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-semibold" style={{ color: c.textPrimary }}>
-              {newAlerts.critical > 0 ? '🔴 Nuevas Alertas Críticas' : '🟡 Nuevas Alertas'}
+            <h3 className="font-semibold truncate" style={{ color: c.textPrimary }}>
+              {p.critical > 0 ? '🔴 ' : '🟡 '}{p.routerName}
             </h3>
-            <button onClick={() => setNewAlerts(null)} className="p-1 rounded-lg hover:opacity-70 transition-opacity" style={{ color: c.textMuted }}>
+            <button onClick={() => setAlertPopups(prev => prev.filter(x => x.id !== p.id))} className="p-1 rounded-lg hover:opacity-70 transition-opacity flex-shrink-0" style={{ color: c.textMuted }}>
               <X className="w-4 h-4" />
             </button>
           </div>
-          <p className="text-sm mb-2" style={{ color: c.textSecondary }}>
-            {newAlerts.critical} crítica(s), {newAlerts.warning} advertencia(s) en {newAlerts.routers.length} router(es):
+          <p className="text-sm" style={{ color: c.textSecondary }}>
+            {p.critical > 0 ? `${p.critical} crítica(s)` : ''}
+            {p.critical > 0 && p.warning > 0 ? ', ' : ''}
+            {p.warning > 0 ? `${p.warning} advertencia(s)` : ''}
           </p>
-          <ul className="text-sm space-y-0.5 max-h-32 overflow-y-auto" style={{ color: c.textMuted }}>
-            {newAlerts.routers.slice(0, 8).map(name => <li key={name}>• {name}</li>)}
-            {newAlerts.routers.length > 8 && <li style={{ color: c.textMuted }}>... y {newAlerts.routers.length - 8} más</li>}
-          </ul>
-          {hasPermission('monitor:mute') && (
-            <button
-              onClick={() => { setMuted(true); localStorage.setItem('monitor_mute', 'true'); setNewAlerts(null); }}
-              className="mt-3 w-full py-1.5 rounded-lg text-sm font-medium transition-colors"
-              style={{ background: c.bgHover, color: c.textSecondary }}
-            >
-              Silenciar alertas
-            </button>
-          )}
         </div>
-      )}
+      ))}
     </div>
   );
 }
