@@ -74,7 +74,8 @@ def list_events(
 
 
 def _list_events(severity, topic, router_id, search, is_resolved, source, limit, db, current_user):
-    events = []
+    health_events = []
+    router_events = []
 
     allowed_cats = event_filter.load_role_event_categories(current_user.role, db)
     is_admin = (current_user.role == "admin")
@@ -85,16 +86,15 @@ def _list_events(severity, topic, router_id, search, is_resolved, source, limit,
     router_blocked = visible_ids is not None and router_id is not None and int(router_id) not in visible_ids
 
     if source != "router":
-        health_events = []
         has_sensitive = "routers:view_sensitive" in get_user_permissions(current_user)
-        aq_all = db.query(Alert)
+        aq = db.query(Alert)
         if severity:
-            aq_all = aq_all.filter(Alert.severity == severity)
+            aq = aq.filter(Alert.severity == severity)
         if router_id:
-            aq_all = aq_all.filter(Alert.router_id == router_id)
+            aq = aq.filter(Alert.router_id == router_id)
         if is_resolved is not None:
-            aq_all = aq_all.filter(Alert.is_resolved == is_resolved)
-        for a in aq_all.order_by(desc(Alert.id)).all():
+            aq = aq.filter(Alert.is_resolved == is_resolved)
+        for a in aq.order_by(desc(Alert.id)).all():
             if router_blocked:
                 continue
             if visible_ids is not None and a.router_id is not None and a.router_id not in visible_ids:
@@ -112,22 +112,18 @@ def _list_events(severity, topic, router_id, search, is_resolved, source, limit,
                 r = db.query(RouterModel).filter(RouterModel.id == a.router_id).first()
                 if r:
                     router_name = r.name
-            sort_time = (a.created_at - timedelta(hours=3)).isoformat() if a.created_at else None
-            msg = a.title + (f" — {a.message}" if a.message else "") if has_sensitive else a.title
             health_events.append({
                 "id": f"a_{a.id}", "router_id": a.router_id, "router_name": router_name,
-                "time": a.created_at.strftime("%H:%M:%S") if a.created_at else "",
-                "topics": a.alert_type, "message": msg,
+                "time": a.created_at.strftime("%m/%d %H:%M:%S") if a.created_at else "",
+                "topics": a.alert_type, "message": alert_msg,
                 "severity": a.severity,
                 "created_at": utc_iso(a.created_at),
-                "sort_time": sort_time,
+                "sort_time": a.created_at.isoformat() if a.created_at else "",
                 "source": "health", "is_resolved": a.is_resolved,
                 "resolved_at": utc_iso(a.resolved_at),
-                "resolved_by": a.resolved_by, "resolution_comment": getattr(a, 'resolution_comment', None),
+                "resolved_by": a.resolved_by,
+                "resolution_comment": getattr(a, 'resolution_comment', None),
             })
-
-        # Calcular cuántos EventLogs entran (reservar espacio para health events)
-        router_limit = limit - len(health_events)
 
     if source != "health":
         router_can_see = see_all or bool(allowed_cats)
@@ -144,13 +140,12 @@ def _list_events(severity, topic, router_id, search, is_resolved, source, limit,
             if visible_ids is not None:
                 q = q.filter(EventLog.router_id.in_(visible_ids))
 
-            actual_limit = router_limit if source != "router" else limit
             base_q = q.order_by(desc(EventLog.id))
             offset = 0
             batch = 500
             max_fetched = 20000
             fetched = 0
-            while len(events) < actual_limit and fetched < max_fetched:
+            while len(router_events) < limit and fetched < max_fetched:
                 rows = base_q.limit(batch).offset(offset).all()
                 if not rows:
                     break
@@ -159,35 +154,31 @@ def _list_events(severity, topic, router_id, search, is_resolved, source, limit,
                         continue
                     if allowed_cats and not see_all and event_filter.classify_category(el.topics) not in allowed_cats:
                         continue
-                    events.append({
+                    router_events.append({
                         "id": f"el_{el.id}",
                         "router_id": el.router_id,
                         "router_name": el.router_name,
-                        "time": el.ros_time,
+                        "time": el.ros_time if el.ros_time else (el.first_seen.strftime("%m/%d %H:%M:%S") if el.first_seen else ""),
                         "topics": el.topics,
                         "message": el.message,
                         "severity": el.severity,
                         "created_at": utc_iso(el.first_seen),
-                        "sort_time": (el.first_seen - timedelta(hours=3)).strftime("%Y-%m-%dT") + el.ros_time if el.first_seen and el.ros_time else (el.first_seen.isoformat() if el.first_seen else None),
+                        "sort_time": el.first_seen.isoformat() if el.first_seen else "",
                         "source": "router",
                     })
-                    if len(events) >= actual_limit:
+                    if len(router_events) >= limit:
                         break
                 offset += batch
                 fetched += len(rows)
 
-    if source != "router":
-        # Fusionar health events + EventLogs, orden cronológico
-        events = health_events + events
+    if source == "router":
+        events = router_events[:limit]
+    elif source == "health":
+        events = health_events[:limit]
+    else:
+        events = (health_events + router_events)[:limit]
 
-    # Orden cronológico descendente (por sort_time que refleja la hora real del evento)
     events.sort(key=lambda e: e.get("sort_time") or "", reverse=True)
-    # Si hay críticas no resueltas, asegurar que estén al inicio
-    unresolved_crit = [e for e in events if e.get("source") == "health" and e.get("severity") == "critical" and not e.get("is_resolved", True)]
-    rest = [e for e in events if not (e.get("source") == "health" and e.get("severity") == "critical" and not e.get("is_resolved", True))]
-    events = unresolved_crit + rest
-    events = events[:limit]
-
     return events
 
 
