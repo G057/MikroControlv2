@@ -68,9 +68,9 @@ def classify_alert_category(alert_type: str) -> str:
     return _ALERT_TYPE_CATEGORY.get((alert_type or "").lower(), "system")
 
 
-def load_exclusion_filters(db: Session) -> list:
-    """Carga las reglas de exclusión de eventos desde system_settings."""
-    row = db.query(SystemSetting).filter(SystemSetting.key == "event_exclusion_filters").first()
+def load_json_setting(db: Session, key: str) -> list:
+    """Carga una setting que almacena un JSON array."""
+    row = db.query(SystemSetting).filter(SystemSetting.key == key).first()
     if not row or not row.value:
         return []
     try:
@@ -78,6 +78,21 @@ def load_exclusion_filters(db: Session) -> list:
         return data if isinstance(data, list) else []
     except (json.JSONDecodeError, TypeError):
         return []
+
+
+def load_exclusion_filters(db: Session) -> list:
+    """Carga las reglas de exclusión de eventos (Events page)."""
+    return load_json_setting(db, "event_exclusion_filters")
+
+
+def load_popup_filters(db: Session) -> list:
+    """Carga las reglas de exclusión de popup."""
+    return load_json_setting(db, "popup_exclusion_filters")
+
+
+def load_telegram_filters(db: Session) -> list:
+    """Carga las reglas de exclusión de Telegram."""
+    return load_json_setting(db, "telegram_exclusion_filters")
 
 
 def event_matches_filter(message: str, topics: str, filt: dict) -> bool:

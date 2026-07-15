@@ -346,6 +346,12 @@ export const settingsAPI = {
   eventFilters: () => request<{ filters: EventFilterRule[] }>('/settings/event-filters'),
   updateEventFilters: (filters: EventFilterRule[]) =>
     request<{ filters: EventFilterRule[] }>('/settings/event-filters', { method: 'PUT', body: JSON.stringify({ filters }) }),
+  popupFilters: () => request<{ filters: EventFilterRule[] }>('/settings/popup-filters'),
+  updatePopupFilters: (filters: EventFilterRule[]) =>
+    request<{ filters: EventFilterRule[] }>('/settings/popup-filters', { method: 'PUT', body: JSON.stringify({ filters }) }),
+  telegramFilters: () => request<{ filters: EventFilterRule[] }>('/settings/telegram-filters'),
+  updateTelegramFilters: (filters: EventFilterRule[]) =>
+    request<{ filters: EventFilterRule[] }>('/settings/telegram-filters', { method: 'PUT', body: JSON.stringify({ filters }) }),
 };
 
 export interface EventFilterRule {

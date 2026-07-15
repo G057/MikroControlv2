@@ -181,6 +181,8 @@ def _handle_message(msg_bytes: bytes):
                     parsed["message"][:200],
                     tg_msg,
                     sev,
+                    message=parsed["message"][:500],
+                    topics=parsed["topics"],
                 )
         db.commit()
     except Exception as e:

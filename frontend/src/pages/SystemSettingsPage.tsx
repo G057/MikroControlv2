@@ -880,40 +880,85 @@ function LogoEditTab({ c }: { c: any }) {
 }
 
 function EventFiltersTab({ c }: { c: any }) {
-  const [filters, setFilters] = useState<EventFilterRule[]>([]);
+  const [subTab, setSubTab] = useState<'exclusion' | 'popup' | 'telegram'>('exclusion');
+  const [exclusionFilters, setExclusionFilters] = useState<EventFilterRule[]>([]);
+  const [popupFilters, setPopupFilters] = useState<EventFilterRule[]>([]);
+  const [telegramFilters, setTelegramFilters] = useState<EventFilterRule[]>([]);
   const [roles, setRoles] = useState<{ name: string }[]>([]);
   const [loading, setLoading] = useState(false);
 
   const load = () => {
     setLoading(true);
-    Promise.all([settingsAPI.eventFilters(), rolesAPI.list()])
-      .then(([r, rl]) => { setFilters(r.filters); setRoles(rl.map(x => ({ name: x.name }))); })
+    Promise.all([
+      settingsAPI.eventFilters(),
+      settingsAPI.popupFilters(),
+      settingsAPI.telegramFilters(),
+      rolesAPI.list(),
+    ])
+      .then(([ex, pop, tg, rl]) => {
+        setExclusionFilters(ex.filters);
+        setPopupFilters(pop.filters);
+        setTelegramFilters(tg.filters);
+        setRoles(rl.map(x => ({ name: x.name })));
+      })
       .catch(e => toast.error(e.message))
       .finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
 
-  const save = async (next: EventFilterRule[]) => {
-    try {
-      const res = await settingsAPI.updateEventFilters(next);
-      setFilters(res.filters);
-      toast.success('Filtros guardados');
-    } catch (e: any) { toast.error(e.message); }
-  };
+  const subTabs = [
+    { id: 'exclusion' as const, label: 'Exclusión (Eventos)', desc: 'Ocultar eventos de la vista de Eventos' },
+    { id: 'popup' as const, label: 'Popup', desc: 'Qué eventos NO muestran popup en el Monitor' },
+    { id: 'telegram' as const, label: 'Telegram', desc: 'Qué eventos NO envían notificación a Telegram' },
+  ];
 
   return (
     <div className="space-y-4">
+      <div className="flex gap-1 p-1 rounded-lg" style={{ background: c.bgHover }}>
+        {subTabs.map(st => (
+          <button key={st.id} onClick={() => setSubTab(st.id)}
+            className="flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all text-center"
+            style={subTab === st.id ? { background: c.bgCard, color: c.textPrimary, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' } : { color: c.textMuted }}>
+            {st.label}
+          </button>
+        ))}
+      </div>
+
       {loading ? (
         <p className="text-sm" style={{ color: c.textMuted }}>Cargando...</p>
-      ) : (
+      ) : subTab === 'exclusion' ? (
         <EventFilterRulesEditor
-          value={filters}
-          onChange={save}
+          value={exclusionFilters}
+          onChange={async next => { const r = await settingsAPI.updateEventFilters(next); setExclusionFilters(r.filters); toast.success('Filtros guardados'); }}
           rolesOptions={roles}
           helper={
             <>
               <p className="font-medium mb-1" style={{ color: c.textSecondary }}>Filtros de exclusión de eventos</p>
-              <p>Cada regla oculta los eventos que coincidan en la vista de Eventos (el log sigue guardado). Si no asignás roles, la regla es <b>global</b> (se aplica a todos). Si elegís roles, solo se aplica a esos roles. Usá <code style={{ color: c.textLink }}>*</code> como comodín, ej: <code style={{ color: c.textLink }}>user * logged in from * via api</code>.</p>
+              <p>Cada regla oculta los eventos que coincidan en la vista de Eventos (el log sigue guardado). Si no asignás roles, la regla es <b>global</b>. Usá <code style={{ color: c.textLink }}>*</code> como comodín.</p>
+            </>
+          }
+        />
+      ) : subTab === 'popup' ? (
+        <EventFilterRulesEditor
+          value={popupFilters}
+          onChange={async next => { const r = await settingsAPI.updatePopupFilters(next); setPopupFilters(r.filters); toast.success('Filtros popup guardados'); }}
+          rolesOptions={roles}
+          helper={
+            <>
+              <p className="font-medium mb-1" style={{ color: c.textSecondary }}>Filtros de popup</p>
+              <p>Los eventos que coincidan con estas reglas NO mostrarán popup en el Monitor. Las desconexiones críticas (router offline) siempre muestran popup aunque coincidan. Dejá la lista vacía para mostrar popup en todos los eventos.</p>
+            </>
+          }
+        />
+      ) : (
+        <EventFilterRulesEditor
+          value={telegramFilters}
+          onChange={async next => { const r = await settingsAPI.updateTelegramFilters(next); setTelegramFilters(r.filters); toast.success('Filtros telegram guardados'); }}
+          rolesOptions={roles}
+          helper={
+            <>
+              <p className="font-medium mb-1" style={{ color: c.textSecondary }}>Filtros de Telegram</p>
+              <p>Los eventos que coincidan con estas reglas NO enviarán notificación a Telegram. Las desconexiones críticas (router offline) siempre notifican aunque coincidan. Dejá la lista vacía para notificar todos los eventos.</p>
             </>
           }
         />

@@ -5,6 +5,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user, require_permission
 from app.core.router_access import get_visible_router_ids
 from app.core.datetime_utils import utc_iso
+from app.core.event_filter import load_popup_filters, is_event_excluded
 from app.models.user import User
 from app.models.router import Router
 from app.models.alert import Alert
@@ -47,18 +48,40 @@ def _alert_counts(db, visible_ids):
 
 
 def _new_event_counts(db, visible_ids, since_id):
-    """Cuenta EventLog con id > since_id, por router y severidad."""
+    """Cuenta EventLog con id > since_id, por router y severidad.
+    Si hay popup_exclusion_filters, itera los eventos y excluye los que coincidan."""
     data = {}
     if since_id is None:
         return data
+
+    popup_filters = load_popup_filters(db)
+
     for sev in ("critical", "warning"):
-        q = db.query(EventLog.router_id, func.count(EventLog.id)).filter(
-            EventLog.severity == sev, EventLog.id > since_id
-        )
-        if visible_ids is not None:
-            q = q.filter(EventLog.router_id.in_(visible_ids))
-        for r_id, cnt in q.group_by(EventLog.router_id).all():
-            data.setdefault(r_id, {})[sev] = cnt
+        if popup_filters:
+            # Slow path: cargar cada fila y aplicar filtros
+            q = db.query(EventLog).filter(
+                EventLog.severity == sev, EventLog.id > since_id
+            )
+            if visible_ids is not None:
+                q = q.filter(EventLog.router_id.in_(visible_ids))
+            for log in q.all():
+                # router_offline (health critical) siempre muestra popup
+                if log.topics.startswith("health,") and log.severity == "critical":
+                    data.setdefault(log.router_id, {}).setdefault("critical", 0)
+                    data[log.router_id]["critical"] += 1
+                    continue
+                if not is_event_excluded(log.message, log.topics, popup_filters):
+                    data.setdefault(log.router_id, {}).setdefault(sev, 0)
+                    data[log.router_id][sev] += 1
+        else:
+            # Fast path: COUNT
+            q = db.query(EventLog.router_id, func.count(EventLog.id)).filter(
+                EventLog.severity == sev, EventLog.id > since_id
+            )
+            if visible_ids is not None:
+                q = q.filter(EventLog.router_id.in_(visible_ids))
+            for r_id, cnt in q.group_by(EventLog.router_id).all():
+                data.setdefault(r_id, {})[sev] = cnt
     return data
 
 

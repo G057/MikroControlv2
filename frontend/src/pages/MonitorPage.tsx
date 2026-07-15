@@ -68,6 +68,24 @@ export default function MonitorPage() {
   const popupIdRef = useRef(0);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const warmedRef = useRef(false);
+
+  // Warm up AudioContext on first user click
+  useEffect(() => {
+    const warm = () => {
+      if (!warmedRef.current) {
+        try {
+          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          audioCtxRef.current = ctx;
+          if (ctx.state === 'suspended') ctx.resume();
+          warmedRef.current = true;
+        } catch {}
+      }
+      document.removeEventListener('click', warm);
+    };
+    document.addEventListener('click', warm);
+    return () => document.removeEventListener('click', warm);
+  }, []);
 
   const playAlertSound = useCallback(() => {
     try {

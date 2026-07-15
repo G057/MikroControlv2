@@ -176,7 +176,7 @@ def fetch_router_logs(db, router: Router) -> int:
             if created or get_setting(db, repeat_key, "true") == "true":
                 icon = "🔴" if severity == "critical" else "🟡"
                 tg_msg = f"{icon} <b>{router.name}: {severity}</b>\n{message[:200] if message else 'Sin detalle'}"
-                notify(f"{router.name}: {severity}", message[:200] if message else "Sin detalle", tg_msg, severity)
+                notify(f"{router.name}: {severity}", message[:200] if message else "Sin detalle", tg_msg, severity, message=message[:500], topics=topics)
 
     return new_count
 
@@ -212,7 +212,9 @@ def fetch_all_logs():
                             tg_msg = f"🔴 <b>{router.name} se desconectó</b>\nError: {e}"
                             notify(f"{router.name} se desconectó",
                                    f"El router {router.name} dejó de responder (logs). Error: {e}",
-                                   tg_msg, "critical")
+                                   tg_msg, "critical",
+                                   message=f"{router.name} se desconectó. Error: {e}",
+                                   topics="health,critical")
             # Commit por router: transacción corta, libera el write-lock de SQLite
             # entre routers y evita retenerlo durante el I/O de red del siguiente.
             try:

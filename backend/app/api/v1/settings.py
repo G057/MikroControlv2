@@ -69,6 +69,8 @@ DEFAULTS = {
     "router_backup_retention_count": "60",
     "syslog_enabled": "false",
     "syslog_port": "5140",
+    "popup_exclusion_filters": "",
+    "telegram_exclusion_filters": "",
 }
 
 # Claves cuyo valor es un secreto: se cifran en reposo y se enmascaran al leer.
@@ -167,6 +169,8 @@ class SettingsUpdate(BaseModel):
     router_backup_retention_count: Optional[str] = None
     syslog_enabled: Optional[str] = None
     syslog_port: Optional[str] = None
+    popup_exclusion_filters: Optional[str] = None
+    telegram_exclusion_filters: Optional[str] = None
 
 
 class UserCreate(BaseModel):
@@ -330,7 +334,7 @@ def send_telegram(settings: dict, message: str):
         pass
 
 
-def notify(subject: str, body: str, telegram_msg: str = None, severity: str = None):
+def notify(subject: str, body: str, telegram_msg: str = None, severity: str = None, message: str = "", topics: str = ""):
     from app.core.database import SessionLocal
     db = SessionLocal()
     try:
@@ -340,6 +344,15 @@ def notify(subject: str, body: str, telegram_msg: str = None, severity: str = No
             return
         if severity == "warning" and settings.get("notify_warning_alert", "false") != "true":
             return
+        # Telegram exclusion filters — saltear para health critical (router_offline)
+        if message and severity in ("critical", "warning"):
+            from app.core.event_filter import load_telegram_filters, is_event_excluded
+            tg_filters = load_telegram_filters(db)
+            if tg_filters and is_event_excluded(message, topics, tg_filters):
+                if topics.startswith("health,") and severity == "critical":
+                    pass  # router_offline siempre notifica
+                else:
+                    return  # Suprimido por filtro
         send_telegram(settings, telegram_msg or body)
     except Exception:
         pass
@@ -441,6 +454,70 @@ def update_event_filters(
               user_id=current_user.id, ip_address=req.client.host if req.client else None)
     db.commit()
     return {"filters": clean}
+
+
+def _save_filter_setting(db: Session, key: str, data: dict, current_user: User, req: Request):
+    """Valida y guarda una lista de reglas de filtro en una setting."""
+    filters = data.get("filters", [])
+    if not isinstance(filters, list):
+        raise HTTPException(status_code=400, detail="filters debe ser una lista")
+    clean = []
+    for f in filters:
+        if not isinstance(f, dict):
+            continue
+        clean.append({
+            "id": str(f.get("id", "")),
+            "name": str(f.get("name", ""))[:80],
+            "pattern": str(f.get("pattern", "")),
+            "mode": f.get("mode", "contains") if f.get("mode") in ("contains", "wildcard", "regex") else "contains",
+            "field": f.get("field", "message") if f.get("field") in ("message", "topics", "any") else "message",
+            "enabled": bool(f.get("enabled", True)),
+            "roles": [str(r) for r in (f.get("roles") or []) if isinstance(r, str)][:50],
+        })
+    _set(db, key, json.dumps(clean))
+    log_audit(db, current_user.username, "update", "settings",
+              details={key: len(clean)},
+              user_id=current_user.id, ip_address=req.client.host if req.client else None)
+    db.commit()
+    return {"filters": clean}
+
+
+@router.get("/popup-filters")
+def get_popup_filters(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("settings:edit")),
+):
+    from app.core.event_filter import load_popup_filters
+    return {"filters": load_popup_filters(db)}
+
+
+@router.put("/popup-filters")
+def update_popup_filters(
+    data: dict,
+    req: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("settings:edit")),
+):
+    return _save_filter_setting(db, "popup_exclusion_filters", data, current_user, req)
+
+
+@router.get("/telegram-filters")
+def get_telegram_filters(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("settings:edit")),
+):
+    from app.core.event_filter import load_telegram_filters
+    return {"filters": load_telegram_filters(db)}
+
+
+@router.put("/telegram-filters")
+def update_telegram_filters(
+    data: dict,
+    req: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("settings:edit")),
+):
+    return _save_filter_setting(db, "telegram_exclusion_filters", data, current_user, req)
 
 
 @router.get("/users")
