@@ -161,8 +161,12 @@ def _apply_online(db, router, now, resources, health):
                       resolved=True)
 
 
+_event_counter = 0
+
 def _make_event_hash(router_id, alert_type, message):
-    raw = f"health|{router_id}|{alert_type}|{message}"
+    global _event_counter
+    _event_counter += 1
+    raw = f"health|{router_id}|{alert_type}|{_event_counter}|{message}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
 

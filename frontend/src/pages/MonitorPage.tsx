@@ -448,24 +448,28 @@ export default function MonitorPage() {
         </div>
       </div>
 
-      {/* Popups de alertas — uno por router, sin auto-dismiss */}
-      {alertPopups.filter(p => !mutedRef.current).map((p, i) => (
-        <div key={p.id} className="fixed right-4 z-50 w-96 rounded-xl p-4 shadow-2xl animate-slide-down" style={{ top: 16 + i * 150, background: c.bgCard, border: `1px solid ${p.critical > 0 ? c.red : c.yellow}` }}>
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-semibold truncate" style={{ color: c.textPrimary }}>
-              {p.critical > 0 ? '🔴 ' : '🟡 '}{p.routerName}
-            </h3>
-            <button onClick={() => setAlertPopups(prev => prev.filter(x => x.id !== p.id))} className="p-1 rounded-lg hover:opacity-70 transition-opacity flex-shrink-0" style={{ color: c.textMuted }}>
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-          <p className="text-sm" style={{ color: c.textSecondary }}>
-            {p.critical > 0 ? `${p.critical} crítica(s)` : ''}
-            {p.critical > 0 && p.warning > 0 ? ', ' : ''}
-            {p.warning > 0 ? `${p.warning} advertencia(s)` : ''}
-          </p>
+      {/* Popups de alertas — uno por router, sin auto-dismiss, con scroll */}
+      {alertPopups.filter(p => !mutedRef.current).length > 0 && (
+        <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-h-[80vh] overflow-y-auto" style={{ maxWidth: 384, scrollbarWidth: 'thin' }}>
+          {alertPopups.filter(p => !mutedRef.current).map(p => (
+            <div key={p.id} className="w-96 rounded-xl p-4 shadow-2xl animate-slide-down flex-shrink-0" style={{ background: c.bgCard, border: `1px solid ${p.critical > 0 ? c.red : c.yellow}` }}>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-semibold truncate" style={{ color: c.textPrimary }}>
+                  {p.critical > 0 ? '🔴 ' : '🟡 '}{p.routerName}
+                </h3>
+                <button onClick={() => setAlertPopups(prev => prev.filter(x => x.id !== p.id))} className="p-1 rounded-lg hover:opacity-70 transition-opacity flex-shrink-0" style={{ color: c.textMuted }}>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-sm" style={{ color: c.textSecondary }}>
+                {p.critical > 0 ? `${p.critical} crítica(s)` : ''}
+                {p.critical > 0 && p.warning > 0 ? ', ' : ''}
+                {p.warning > 0 ? `${p.warning} advertencia(s)` : ''}
+              </p>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </div>
   );
 }
