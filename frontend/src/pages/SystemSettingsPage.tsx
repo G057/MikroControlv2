@@ -1048,7 +1048,7 @@ export default function SystemSettingsPage() {
     { id: 'backup' as const, label: 'Backup', icon: Download },
     { id: 'filters' as const, label: 'Filtros', icon: Filter },
     { id: 'classification' as const, label: 'Clasificación', icon: Wrench },
-    { id: 'gallery' as const, label: 'Galería', icon: Layers },
+    { id: 'gallery' as const, label: 'Galería de filtros', icon: Layers },
     { id: 'logo' as const, label: 'Logo', icon: Image },
   ];
 
