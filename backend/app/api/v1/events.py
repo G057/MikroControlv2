@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from app.core.database import get_db
-from app.core.security import get_current_user, get_user_permissions
+from app.core.security import get_current_user, get_user_permissions, require_permission
 from app.models.user import User
 from app.models.event_log import EventLog
 from app.models.alert import Alert
