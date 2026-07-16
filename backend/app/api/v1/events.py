@@ -115,7 +115,7 @@ def _list_events(severity, topic, router_id, search, is_resolved, source, limit,
                 "topics": a.alert_type, "message": alert_msg,
                 "severity": a.severity,
                 "created_at": utc_iso(a.created_at),
-                "sort_time": a.created_at.isoformat() if a.created_at else "",
+                "sort_time": utc_iso(a.created_at) or "",
                 "source": "health", "is_resolved": a.is_resolved,
                 "resolved_at": utc_iso(a.resolved_at),
                 "resolved_by": a.resolved_by,
@@ -161,7 +161,7 @@ def _list_events(severity, topic, router_id, search, is_resolved, source, limit,
                         "message": el.message,
                         "severity": el.severity,
                         "created_at": utc_iso(el.first_seen),
-                        "sort_time": el.first_seen.isoformat() if el.first_seen else "",
+                        "sort_time": utc_iso(el.first_seen) or "",
                         "source": "router",
                     })
                     if len(router_events) >= limit:
@@ -174,10 +174,10 @@ def _list_events(severity, topic, router_id, search, is_resolved, source, limit,
     elif source == "health":
         events = health_events[:limit]
     else:
-        events = (health_events + router_events)[:limit]
+        events = health_events + router_events
 
     events.sort(key=lambda e: e.get("sort_time") or "", reverse=True)
-    return events
+    return events[:limit]
 
 
 @router.get("/count")

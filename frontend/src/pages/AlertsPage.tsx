@@ -225,7 +225,7 @@ export default function EventsPage() {
               <div className="flex items-center gap-3 px-4 py-2.5 cursor-pointer" onClick={() => setExpandedId(isExp ? null : ev.id)}>
                 <Icon className="w-4 h-4 shrink-0" style={{ color: s.color }} />
                 <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-[10px] w-16 font-mono" style={{ color: c.textMuted }}>{isHealth ? formatTime(ev.created_at) : (ev.time || '')}</span>
+                  <span className="text-[10px] w-16 font-mono" style={{ color: c.textMuted }}>{formatTime(ev.created_at)}</span>
                   <Server className="w-3 h-3" style={{ color: c.textMuted }} />
                   <span className="text-xs font-medium truncate max-w-[100px]" style={{ color: c.textSecondary }}>
                     {ev.router_name || (ev.router_id ? `Router #${ev.router_id}` : 'Sistema')}
@@ -245,7 +245,8 @@ export default function EventsPage() {
               {isExp && (
                 <div className="px-4 pb-3 pt-2.5" style={{ borderTop: `1px solid ${c.borderLight}` }}>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                    <div><span className="block mb-0.5 font-medium" style={{ color: c.textMuted }}>Fecha/Hora</span><span style={{ color: c.textSecondary }}>{isHealth ? formatDateTime(ev.created_at) : (ev.time || '-')}</span></div>
+                    <div><span className="block mb-0.5 font-medium" style={{ color: c.textMuted }}>Recibido</span><span style={{ color: c.textSecondary }}>{formatDateTime(ev.created_at)}</span></div>
+                    {!isHealth && ev.time && <div><span className="block mb-0.5 font-medium" style={{ color: c.textMuted }}>Hora RouterOS</span><span style={{ color: c.textSecondary }}>{ev.time}</span></div>}
                     <div><span className="block mb-0.5 font-medium" style={{ color: c.textMuted }}>Severidad</span><span style={{ color: s.color }}>{s.label}</span></div>
                     <div><span className="block mb-0.5 font-medium" style={{ color: c.textMuted }}>Topics</span><div className="flex flex-wrap gap-1">{ev.topics.split(',').filter(Boolean).map((t, i) => <TopicBadge key={i} topic={t} c={c} />)}</div></div>
                     <div><span className="block mb-0.5 font-medium" style={{ color: c.textMuted }}>Fuente</span><span style={{ color: c.textSecondary }}>{isHealth ? 'Health Checker' : 'Router Log'}</span></div>
