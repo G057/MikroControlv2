@@ -6,7 +6,7 @@ import EventClassificationPage from './EventClassificationPage';
 import ErrorBoundary from '../components/ErrorBoundary';
 import {
   Settings, Users, Mail, MessageCircle, Bell, Download, Plus, Trash2,
-  Save, Send, CheckCircle, XCircle, Eye, EyeOff, Shield, Clock, Activity, Filter, Image, RotateCcw, RefreshCw, Radio, Wrench, Layers,
+  Save, Send, CheckCircle, XCircle, Eye, EyeOff, Shield, Clock, Activity, Filter, Image, RotateCcw, RefreshCw, Radio, Wrench, Layers, HardDrive,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatDateTime, getTimezone, setTimezone } from '../utils/date';
@@ -1032,9 +1032,22 @@ function FilterGalleryTab({ c }: { c: any }) {
   return <div><EventFilterRulesEditor value={filters} onChange={async next => { const r = await settingsAPI.updateFilterGallery(next); setFilters(r.filters); toast.success('Galería guardada'); }} helper={<><p className="font-medium mb-1" style={{ color: c.textSecondary }}>Galería reutilizable</p><p>Guardá patrones frecuentes aquí. Después estarán disponibles para insertarlos sin reescribirlos en Filtros de Notificación.</p></>} /></div>;
 }
 
+function RetentionTab({ settings, onSave, c }: { settings: SystemSettings; onSave: (d: Partial<SystemSettings>) => void; c: any }) {
+  const [usage, setUsage] = useState<import('../services/api').StorageUsage | null>(null);
+  const [infoDays, setInfoDays] = useState(Number(settings.event_info_retention_days) || 30);
+  const [eventDays, setEventDays] = useState(Number(settings.event_retention_days) || 90);
+  const [trafficDays, setTrafficDays] = useState(Number(settings.traffic_retention_days) || 7);
+  const [unmatchedDays, setUnmatchedDays] = useState(Number(settings.unmatched_syslog_retention_days) || 14);
+  const load = () => settingsAPI.storageUsage().then(setUsage).catch(e => toast.error(e.message));
+  useEffect(() => { load(); }, []);
+  const bytes = (value: number) => value > 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(1)} GB` : `${(value / 1024 ** 2).toFixed(1)} MB`;
+  const purge = async () => { if (!confirm('¿Purgar únicamente datos fuera de la retención configurada? No se pueden recuperar.')) return; try { const r = await settingsAPI.purgeStorage(); toast.success(`Limpieza completada: ${Object.values(r.deleted).reduce((a, b) => a + b, 0)} registros`); load(); } catch (e: any) { toast.error(e.message); } };
+  return <div className="space-y-5"><div><h3 className="text-sm font-semibold" style={{ color: c.textPrimary }}>Retención y uso de datos</h3><p className="text-xs" style={{ color: c.textMuted }}>La purga conserva alertas y notificaciones activas. Los eventos repetitivos nuevos se consolidan.</p></div><div className="grid grid-cols-1 md:grid-cols-4 gap-3">{[["Info", infoDays, setInfoDays], ["Warning/Critical", eventDays, setEventDays], ["Tráfico", trafficDays, setTrafficDays], ["Syslog no asociado", unmatchedDays, setUnmatchedDays]].map(([label, value, setter]) => <label key={label as string} className="card text-xs"><span>{label as string} (días)</span><input type="number" min={1} value={value as number} onChange={e => (setter as any)(Math.max(1, Number(e.target.value)))} className="input w-full mt-2" /></label>)}</div><div className="flex gap-2"><button onClick={() => onSave({ event_info_retention_days: String(infoDays), event_retention_days: String(eventDays), traffic_retention_days: String(trafficDays), unmatched_syslog_retention_days: String(unmatchedDays) })} className="btn-primary"><Save className="w-4 h-4 inline mr-1" />Guardar retención</button><button onClick={purge} className="btn-secondary">Purgar ahora</button></div>{usage && <div className="card overflow-x-auto"><table className="w-full text-sm"><thead><tr><th className="text-left p-2">Tabla</th><th className="text-right p-2">Tamaño</th><th className="text-right p-2">Filas</th></tr></thead><tbody>{usage.tables.map(row => <tr key={row.name} style={{ borderTop: `1px solid ${c.border}` }}><td className="p-2">{row.name}</td><td className="p-2 text-right">{bytes(row.bytes)}</td><td className="p-2 text-right">{row.rows.toLocaleString()}</td></tr>)}</tbody></table></div>}</div>;
+}
+
 
 export default function SystemSettingsPage() {
-  const [tab, setTab] = useState<'operators' | 'smtp' | 'telegram' | 'notifications' | 'monitoring' | 'syslog' | 'services' | 'clock' | 'backup' | 'filters' | 'classification' | 'gallery' | 'logo'>('operators');
+  const [tab, setTab] = useState<'operators' | 'smtp' | 'telegram' | 'notifications' | 'monitoring' | 'syslog' | 'services' | 'retention' | 'clock' | 'backup' | 'filters' | 'classification' | 'gallery' | 'logo'>('operators');
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const { c } = useTheme();
 
@@ -1056,6 +1069,7 @@ export default function SystemSettingsPage() {
     { id: 'monitoring' as const, label: 'Monitoreo', icon: Activity },
     { id: 'syslog' as const, label: 'Syslog', icon: Radio },
     { id: 'services' as const, label: 'Servicios', icon: Activity },
+    { id: 'retention' as const, label: 'Retención', icon: HardDrive },
     { id: 'clock' as const, label: 'Reloj', icon: Clock },
     { id: 'backup' as const, label: 'Backup', icon: Download },
     { id: 'filters' as const, label: 'Filtros', icon: Filter },
@@ -1086,6 +1100,7 @@ export default function SystemSettingsPage() {
         {tab === 'monitoring' && settings && <ErrorBoundary key="monitoring"><MonitoringTab settings={settings} onSave={handleSave} c={c} /></ErrorBoundary>}
         {tab === 'syslog' && settings && <ErrorBoundary key="syslog"><SyslogTab settings={settings} onSave={handleSave} c={c} /></ErrorBoundary>}
         {tab === 'services' && <ErrorBoundary key="services"><ServicesTab c={c} /></ErrorBoundary>}
+        {tab === 'retention' && settings && <ErrorBoundary key="retention"><RetentionTab settings={settings} onSave={handleSave} c={c} /></ErrorBoundary>}
         {tab === 'clock' && <ErrorBoundary key="clock"><ClockTab c={c} /></ErrorBoundary>}
         {tab === 'backup' && <ErrorBoundary key="backup"><BackupTab c={c} /></ErrorBoundary>}
         {tab === 'filters' && <ErrorBoundary key="filters"><EventFiltersTab c={c} /></ErrorBoundary>}

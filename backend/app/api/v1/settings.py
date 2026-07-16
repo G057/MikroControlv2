@@ -65,6 +65,8 @@ DEFAULTS = {
     "log_alerts_enabled": "true",
     "history_alerts_enabled": "true",
     "event_retention_days": "90",
+    "event_info_retention_days": "30",
+    "unmatched_syslog_retention_days": "14",
     "history_retention_days": "90",
     "traffic_retention_days": "7",
     "backup_interval_hours": "6",
@@ -195,6 +197,8 @@ class SettingsUpdate(BaseModel):
     event_classification_rules: Optional[str] = None
     storage_exclusion_filters: Optional[str] = None
     event_consolidation_minutes: Optional[str] = None
+    event_info_retention_days: Optional[str] = None
+    unmatched_syslog_retention_days: Optional[str] = None
 
 
 class UserCreate(BaseModel):
@@ -277,6 +281,46 @@ def restart_service(
     if result.returncode:
         raise HTTPException(status_code=503, detail="No se pudo reiniciar. Verificá la política sudoers de MikroControl.")
     return {"detail": f"{MANAGED_SERVICES[service_name]} reiniciado"}
+
+
+@router.get("/storage-usage")
+def storage_usage(db: Session = Depends(get_db), _: User = Depends(require_permission("settings:view"))):
+    tables = db.execute(text("SELECT relname, pg_total_relation_size(relid), n_live_tup FROM pg_stat_user_tables ORDER BY pg_total_relation_size(relid) DESC")).all()
+    return {"tables": [{"name": row[0], "bytes": int(row[1]), "rows": int(row[2] or 0)} for row in tables], "policies": {
+        "infoDays": int(get_setting(db, "event_info_retention_days", "30")),
+        "eventDays": int(get_setting(db, "event_retention_days", "90")),
+        "trafficDays": int(get_setting(db, "traffic_retention_days", "7")),
+        "unmatchedDays": int(get_setting(db, "unmatched_syslog_retention_days", "14")),
+    }}
+
+
+@router.post("/storage-usage/purge")
+def purge_storage(db: Session = Depends(get_db), current_user: User = Depends(require_permission("settings:edit"))):
+    from app.models.interface_traffic import InterfaceTraffic
+    from app.models.monitoring import Notification, NotificationDelivery, UnmatchedSyslogMessage
+    now = datetime.now(timezone.utc)
+    def days(key, default):
+        try: return max(1, int(get_setting(db, key, str(default))))
+        except (ValueError, TypeError): return default
+    info_cutoff = now - timedelta(days=days("event_info_retention_days", 30))
+    event_cutoff = now - timedelta(days=days("event_retention_days", 90))
+    traffic_cutoff = now - timedelta(days=days("traffic_retention_days", 7))
+    unmatched_cutoff = now - timedelta(days=days("unmatched_syslog_retention_days", 14))
+    old_notifications = db.query(Notification.id).filter(Notification.status == "acknowledged", Notification.acknowledged_at < event_cutoff)
+    deleted = {
+        "deliveries": db.query(NotificationDelivery).filter(NotificationDelivery.notification_id.in_(old_notifications)).delete(synchronize_session=False),
+        "notifications": db.query(Notification).filter(Notification.id.in_(old_notifications)).delete(synchronize_session=False),
+    }
+    referenced_events = db.query(Notification.event_log_id).filter(Notification.event_log_id.isnot(None))
+    deleted.update({
+        "infoEvents": db.query(EventLog).filter(EventLog.severity == "info", EventLog.first_seen < info_cutoff, ~EventLog.id.in_(referenced_events)).delete(synchronize_session=False),
+        "otherEvents": db.query(EventLog).filter(EventLog.severity != "info", EventLog.first_seen < event_cutoff, ~EventLog.id.in_(referenced_events)).delete(synchronize_session=False),
+        "traffic": db.query(InterfaceTraffic).filter(InterfaceTraffic.timestamp < traffic_cutoff).delete(synchronize_session=False),
+        "unmatched": db.query(UnmatchedSyslogMessage).filter(UnmatchedSyslogMessage.received_at < unmatched_cutoff).delete(synchronize_session=False),
+    })
+    log_audit(db, current_user.username, "purge", "storage", details=deleted, user_id=current_user.id)
+    db.commit()
+    return {"deleted": deleted}
 
 
 @router.get("/")

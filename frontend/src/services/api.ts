@@ -281,6 +281,7 @@ export interface SystemSettings {
   traffic_fetch_interval: string;
   health_alerts_enabled: string; log_alerts_enabled: string; history_alerts_enabled: string;
   event_retention_days: string; history_retention_days: string; traffic_retention_days: string;
+  event_info_retention_days: string; unmatched_syslog_retention_days: string;
   backup_interval_hours: string;
   backup_schedule_days: string;
   backup_schedule_time: string;
@@ -373,9 +374,12 @@ export const settingsAPI = {
   updateFilterGallery: (filters: EventFilterRule[]) => request<{ filters: EventFilterRule[] }>('/settings/filter-gallery', { method: 'PUT', body: JSON.stringify({ filters }) }),
   storageFilters: () => request<{ filters: EventFilterRule[] }>('/settings/storage-filters'),
   updateStorageFilters: (filters: EventFilterRule[]) => request<{ filters: EventFilterRule[] }>('/settings/storage-filters', { method: 'PUT', body: JSON.stringify({ filters }) }),
+  storageUsage: () => request<StorageUsage>('/settings/storage-usage'),
+  purgeStorage: () => request<{ deleted: Record<string, number> }>('/settings/storage-usage/purge', { method: 'POST' }),
 };
 
 export interface SystemServices { services: { name: string; label: string; status: string; canRestart: boolean }[]; resources: { load: number[]; cpuCount: number; memory: { total: number; available: number; used: number; percent: number }; disk: { total: number; used: number; free: number; percent: number }; database: { size: number; connections: number }; backupsSize: number; uptimeSeconds: number }; }
+export interface StorageUsage { tables: { name: string; bytes: number; rows: number }[]; policies: { infoDays: number; eventDays: number; trafficDays: number; unmatchedDays: number }; }
 
 export interface EventFilterRule {
   id: string;
