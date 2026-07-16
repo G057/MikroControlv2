@@ -1,4 +1,4 @@
-import asyncio, json, logging
+import asyncio, json, logging, re
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -351,9 +351,13 @@ def _parse_date(value: Optional[str], end: bool = False):
     if not value:
         return None
     try:
+        is_date_only = bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", value))
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=timezone.utc)
+        # HTML date inputs represent a calendar day, not midnight as an end.
+        if end and is_date_only:
+            parsed += timedelta(days=1)
         return parsed
     except ValueError:
         raise HTTPException(status_code=422, detail="Fecha inválida; usá ISO-8601")
@@ -383,11 +387,11 @@ def explore_events(
         q = q.filter(EventLog.severity == severity)
     if search:
         q = q.filter(EventLog.message.ilike(f"%{search.strip()}%"))
-    start, end = _parse_date(date_from), _parse_date(date_to)
+    start, end = _parse_date(date_from), _parse_date(date_to, end=True)
     if start:
         q = q.filter(EventLog.first_seen >= start)
     if end:
-        q = q.filter(EventLog.first_seen <= end)
+        q = q.filter(EventLog.first_seen < end)
     total = q.count()
     rows = q.order_by(EventLog.first_seen.desc(), EventLog.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return {"total": total, "page": page, "pageSize": page_size, "items": [
@@ -414,11 +418,11 @@ def event_report(
     if not router_row:
         raise HTTPException(status_code=404, detail="Router no encontrado")
     q = db.query(EventLog).filter(EventLog.router_id == router_id)
-    start, end = _parse_date(date_from), _parse_date(date_to)
+    start, end = _parse_date(date_from), _parse_date(date_to, end=True)
     if start:
         q = q.filter(EventLog.first_seen >= start)
     if end:
-        q = q.filter(EventLog.first_seen <= end)
+        q = q.filter(EventLog.first_seen < end)
     summary = dict(q.with_entities(EventLog.severity, func.count(EventLog.id)).group_by(EventLog.severity).all())
     bucket = func.date_trunc("day", EventLog.first_seen).label("bucket")
     rows = q.with_entities(bucket, EventLog.severity, func.count(EventLog.id)).group_by(bucket, EventLog.severity).order_by(bucket).all()
