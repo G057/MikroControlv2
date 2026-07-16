@@ -10,20 +10,20 @@ import { useTheme } from '../contexts/ThemeContext';
 function EventBars({ report, field, color, title }: { report: EventReport; field: 'critical' | 'warning' | 'info'; color: string; title: string }) {
   const maximum = Math.max(1, ...report.series.map(row => row[field]));
   return (
-    <div>
-      <p className="text-sm font-semibold mb-3">{title}</p>
-      <div className="flex items-end gap-4 h-64 border-b border-l px-4 pt-4" style={{ borderColor: '#cbd5e1' }}>
+    <div className="space-y-2">
+      <div className="flex items-baseline justify-between"><p className="text-sm font-semibold">{title}</p><span className="text-xs text-slate-500">Máximo diario: {maximum}</span></div>
+      <div className="space-y-2">
         {report.series.map(row => {
           const value = row[field];
-          const height = value ? Math.max(8, (value / maximum) * 190) : 0;
-          return <div key={row.date} className="flex-1 min-w-0 h-full flex flex-col justify-end items-center gap-2">
-            <span className="text-xs font-bold">{value || '-'}</span>
-            <div className="w-full max-w-20 rounded-t transition-all" style={{ height, background: color }} />
-            <span className="text-[11px] whitespace-nowrap">{row.date}</span>
+          return <div key={row.date} className="grid grid-cols-[90px_1fr_48px] items-center gap-3 text-xs">
+            <span className="font-mono text-slate-600">{row.date}</span>
+            <div className="h-6 rounded bg-slate-100 overflow-hidden">
+              <div className="h-full min-w-0 rounded flex items-center px-2 text-white font-bold" style={{ width: value ? `${Math.max(3, (value / maximum) * 100)}%` : '0%', background: color }} />
+            </div>
+            <span className="text-right font-bold">{value}</span>
           </div>;
         })}
       </div>
-      <p className="text-xs mt-2 text-slate-500">Escala: 0 a {maximum}</p>
     </div>
   );
 }
