@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { settingsAPI, type EventClassificationRule } from '../services/api';
 import { useTheme } from '../contexts/ThemeContext';
 
-const blank = (): EventClassificationRule => ({ id: crypto.randomUUID(), name: '', pattern: '', field: 'message', mode: 'contains', event_type: '', severity: 'warning', enabled: true });
+const blank = (): EventClassificationRule => ({ id: `rule-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`, name: '', pattern: '', field: 'message', mode: 'contains', event_type: '', severity: 'warning', enabled: true });
 
 export default function EventClassificationPage() {
   const { c } = useTheme(); const [rules, setRules] = useState<EventClassificationRule[]>([]); const [saving, setSaving] = useState(false);

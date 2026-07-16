@@ -85,6 +85,7 @@ DEFAULTS = {
     "popup_exclusion_filters": "",
     "telegram_exclusion_filters": "",
     "event_classification_rules": "[]",
+    "filter_gallery": "[]",
 }
 
 # Claves cuyo valor es un secreto: se cifran en reposo y se enmascaran al leer.
@@ -647,6 +648,17 @@ def update_event_classification_rules(
     log_audit(db, current_user.username, "update", "settings", details={"event_classification_rules": len(clean)}, user_id=current_user.id, ip_address=req.client.host if req.client else None)
     db.commit()
     return {"rules": clean}
+
+
+@router.get("/filter-gallery")
+def get_filter_gallery(db: Session = Depends(get_db), _: User = Depends(require_permission("settings:edit"))):
+    from app.core.event_filter import load_json_setting
+    return {"filters": load_json_setting(db, "filter_gallery")}
+
+
+@router.put("/filter-gallery")
+def update_filter_gallery(data: dict, req: Request, db: Session = Depends(get_db), current_user: User = Depends(require_permission("settings:edit"))):
+    return _save_filter_setting(db, "filter_gallery", data, current_user, req)
 
 
 @router.get("/users")

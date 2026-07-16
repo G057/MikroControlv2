@@ -27,8 +27,6 @@ const navGroups: { label?: string; items: NavNode[] }[] = [
       { to: '/events', icon: Bell, label: 'Eventos', permission: 'events:view' },
       { to: '/events/explorer', icon: Search, label: 'Explorador de Eventos', permission: 'events:view' },
       { to: '/events/report', icon: BarChart3, label: 'Informes de Eventos', permission: 'events:view' },
-      { to: '/notification-filters', icon: SlidersHorizontal, label: 'Filtros de Notificación', permission: 'settings:edit' },
-      { to: '/event-classification', icon: Wrench, label: 'Clasificación de Eventos', permission: 'settings:edit' },
       { to: '/audit', icon: ClipboardList, label: 'Auditoría', permission: 'audit:view' },
     ],
   },

@@ -369,6 +369,8 @@ export const settingsAPI = {
   restartService: (name: string) => request<{ detail: string }>(`/settings/services/${name}/restart`, { method: 'POST' }),
   eventClassificationRules: () => request<{ rules: EventClassificationRule[] }>('/settings/event-classification-rules'),
   updateEventClassificationRules: (rules: EventClassificationRule[]) => request<{ rules: EventClassificationRule[] }>('/settings/event-classification-rules', { method: 'PUT', body: JSON.stringify({ rules }) }),
+  filterGallery: () => request<{ filters: EventFilterRule[] }>('/settings/filter-gallery'),
+  updateFilterGallery: (filters: EventFilterRule[]) => request<{ filters: EventFilterRule[] }>('/settings/filter-gallery', { method: 'PUT', body: JSON.stringify({ filters }) }),
 };
 
 export interface SystemServices { services: { name: string; label: string; status: string; canRestart: boolean }[]; resources: { load: number[]; cpuCount: number; memory: { total: number; available: number; used: number; percent: number }; disk: { total: number; used: number; free: number; percent: number }; database: { size: number; connections: number }; backupsSize: number; uptimeSeconds: number }; }

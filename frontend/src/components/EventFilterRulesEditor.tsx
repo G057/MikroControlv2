@@ -47,16 +47,19 @@ export default function EventFilterRulesEditor({
   onChange,
   helper,
   rolesOptions,
+  gallery,
 }: {
   value: EventFilterRule[];
   onChange: (next: EventFilterRule[]) => void;
   helper?: React.ReactNode;
   rolesOptions?: { name: string }[];
+  gallery?: EventFilterRule[];
 }) {
   const { c } = useTheme();
   const [draft, setDraft] = useState<{ name: string; pattern: string; mode: EventFilterRule['mode']; field: EventFilterRule['field']; roles: string[] }>({
     name: '', pattern: '', mode: 'wildcard', field: 'message', roles: [],
   });
+  const [galleryId, setGalleryId] = useState('');
 
   const addRule = () => {
     if (!draft.pattern.trim()) { toast.error('Ingresá un patrón'); return; }
@@ -85,6 +88,7 @@ export default function EventFilterRulesEditor({
 
       <div className="card !p-4 space-y-3">
         <h3 className="text-sm font-semibold" style={{ color: c.textPrimary }}>Nueva regla</h3>
+        {gallery && gallery.length > 0 && <div className="flex gap-2"><select value={galleryId} onChange={e => setGalleryId(e.target.value)} className="input flex-1 text-sm"><option value="">Usar regla de galería...</option>{gallery.map(rule => <option key={rule.id} value={rule.id}>{rule.name}</option>)}</select><button type="button" disabled={!galleryId} onClick={() => { const selected = gallery.find(rule => rule.id === galleryId); if (selected) { onChange([...value, { ...selected, id: `rule-${Date.now()}-${Math.random()}` }]); setGalleryId(''); } }} className="btn-secondary text-sm">Agregar</button></div>}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="text-[10px] uppercase font-medium block mb-1" style={{ color: c.textMuted }}>Nombre</label>

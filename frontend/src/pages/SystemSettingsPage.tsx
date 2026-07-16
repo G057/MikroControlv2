@@ -2,10 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import { settingsAPI, rolesAPI, eventsAPI, logoAPI, systemBackupAPI, type SystemSettings, type OperatorUser, type EventFilterRule, type SystemBackupItem, type SystemServices } from '../services/api';
 import { useTheme } from '../contexts/ThemeContext';
 import EventFilterRulesEditor from '../components/EventFilterRulesEditor';
+import EventClassificationPage from './EventClassificationPage';
 import ErrorBoundary from '../components/ErrorBoundary';
 import {
   Settings, Users, Mail, MessageCircle, Bell, Download, Plus, Trash2,
-  Save, Send, CheckCircle, XCircle, Eye, EyeOff, Shield, Clock, Activity, Filter, Image, RotateCcw, RefreshCw, Radio,
+  Save, Send, CheckCircle, XCircle, Eye, EyeOff, Shield, Clock, Activity, Filter, Image, RotateCcw, RefreshCw, Radio, Wrench, Layers,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatDateTime, getTimezone, setTimezone } from '../utils/date';
@@ -925,6 +926,7 @@ export function EventFiltersTab({ c }: { c: any }) {
   const [popupFilters, setPopupFilters] = useState<EventFilterRule[]>([]);
   const [telegramFilters, setTelegramFilters] = useState<EventFilterRule[]>([]);
   const [roles, setRoles] = useState<{ name: string }[]>([]);
+  const [gallery, setGallery] = useState<EventFilterRule[]>([]);
   const [loading, setLoading] = useState(false);
 
   const load = () => {
@@ -932,13 +934,15 @@ export function EventFiltersTab({ c }: { c: any }) {
     Promise.all([
       settingsAPI.eventFilters(),
       settingsAPI.popupFilters(),
-      settingsAPI.telegramFilters(),
-      rolesAPI.list(),
+       settingsAPI.telegramFilters(),
+       settingsAPI.filterGallery(),
+       rolesAPI.list(),
     ])
-      .then(([ex, pop, tg, rl]) => {
+      .then(([ex, pop, tg, gal, rl]) => {
         setExclusionFilters(ex.filters);
         setPopupFilters(pop.filters);
         setTelegramFilters(tg.filters);
+        setGallery(gal.filters);
         setRoles(rl.map(x => ({ name: x.name })));
       })
       .catch(e => toast.error(e.message))
@@ -971,6 +975,7 @@ export function EventFiltersTab({ c }: { c: any }) {
           value={exclusionFilters}
           onChange={async next => { const r = await settingsAPI.updateEventFilters(next); setExclusionFilters(r.filters); toast.success('Filtros guardados'); }}
           rolesOptions={roles}
+          gallery={gallery}
           helper={
             <>
               <p className="font-medium mb-1" style={{ color: c.textSecondary }}>Filtros de exclusión de eventos</p>
@@ -983,6 +988,7 @@ export function EventFiltersTab({ c }: { c: any }) {
           value={popupFilters}
           onChange={async next => { const r = await settingsAPI.updatePopupFilters(next); setPopupFilters(r.filters); toast.success('Filtros popup guardados'); }}
           rolesOptions={roles}
+          gallery={gallery}
           helper={
             <>
               <p className="font-medium mb-1" style={{ color: c.textSecondary }}>Filtros de popup</p>
@@ -995,6 +1001,7 @@ export function EventFiltersTab({ c }: { c: any }) {
           value={telegramFilters}
           onChange={async next => { const r = await settingsAPI.updateTelegramFilters(next); setTelegramFilters(r.filters); toast.success('Filtros telegram guardados'); }}
           rolesOptions={roles}
+          gallery={gallery}
           helper={
             <>
               <p className="font-medium mb-1" style={{ color: c.textSecondary }}>Filtros de Telegram</p>
@@ -1007,9 +1014,15 @@ export function EventFiltersTab({ c }: { c: any }) {
   );
 }
 
+function FilterGalleryTab({ c }: { c: any }) {
+  const [filters, setFilters] = useState<EventFilterRule[]>([]);
+  useEffect(() => { settingsAPI.filterGallery().then(r => setFilters(r.filters)).catch(e => toast.error(e.message)); }, []);
+  return <div><EventFilterRulesEditor value={filters} onChange={async next => { const r = await settingsAPI.updateFilterGallery(next); setFilters(r.filters); toast.success('Galería guardada'); }} helper={<><p className="font-medium mb-1" style={{ color: c.textSecondary }}>Galería reutilizable</p><p>Guardá patrones frecuentes aquí. Después estarán disponibles para insertarlos sin reescribirlos en Filtros de Notificación.</p></>} /></div>;
+}
+
 
 export default function SystemSettingsPage() {
-  const [tab, setTab] = useState<'operators' | 'smtp' | 'telegram' | 'notifications' | 'monitoring' | 'syslog' | 'services' | 'clock' | 'backup' | 'eventfilters' | 'logo'>('operators');
+  const [tab, setTab] = useState<'operators' | 'smtp' | 'telegram' | 'notifications' | 'monitoring' | 'syslog' | 'services' | 'clock' | 'backup' | 'filters' | 'classification' | 'gallery' | 'logo'>('operators');
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const { c } = useTheme();
 
@@ -1033,7 +1046,9 @@ export default function SystemSettingsPage() {
     { id: 'services' as const, label: 'Servicios', icon: Activity },
     { id: 'clock' as const, label: 'Reloj', icon: Clock },
     { id: 'backup' as const, label: 'Backup', icon: Download },
-    { id: 'eventfilters' as const, label: 'Eventos', icon: Filter },
+    { id: 'filters' as const, label: 'Filtros', icon: Filter },
+    { id: 'classification' as const, label: 'Clasificación', icon: Wrench },
+    { id: 'gallery' as const, label: 'Galería', icon: Layers },
     { id: 'logo' as const, label: 'Logo', icon: Image },
   ];
 
@@ -1061,7 +1076,9 @@ export default function SystemSettingsPage() {
         {tab === 'services' && <ErrorBoundary key="services"><ServicesTab c={c} /></ErrorBoundary>}
         {tab === 'clock' && <ErrorBoundary key="clock"><ClockTab c={c} /></ErrorBoundary>}
         {tab === 'backup' && <ErrorBoundary key="backup"><BackupTab c={c} /></ErrorBoundary>}
-        {tab === 'eventfilters' && <ErrorBoundary key="eventfilters"><EventFiltersTab c={c} /></ErrorBoundary>}
+        {tab === 'filters' && <ErrorBoundary key="filters"><EventFiltersTab c={c} /></ErrorBoundary>}
+        {tab === 'classification' && <ErrorBoundary key="classification"><EventClassificationPage /></ErrorBoundary>}
+        {tab === 'gallery' && <ErrorBoundary key="gallery"><FilterGalleryTab c={c} /></ErrorBoundary>}
         {tab === 'logo' && <ErrorBoundary key="logo"><LogoEditTab c={c} /></ErrorBoundary>}
       </div>
     </div>
