@@ -248,7 +248,10 @@ def counts_by_severity(
     excl_filters = event_filter.filter_rules_for_role(all_rules, current_user.role)
     visible_ids = get_visible_router_ids(current_user, db)
     router_blocked = visible_ids is not None and router_id is not None and int(router_id) not in visible_ids
-    can_use_sql = see_all and not excl_filters and not router_blocked
+    # Summary cards must stay responsive even when display-only exclusion rules
+    # exist. The event list still applies those rules row by row; totals are
+    # operational aggregates calculated directly by PostgreSQL.
+    can_use_sql = see_all and not router_blocked
 
     counts = {"critical": 0, "warning": 0, "info": 0, "unresolved": 0}
 
