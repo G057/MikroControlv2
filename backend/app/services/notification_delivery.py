@@ -1,6 +1,7 @@
 """Best-effort asynchronous external delivery; event ingestion never waits for it."""
 import logging
 import threading
+from sqlalchemy import and_
 
 from app.core.database import SessionLocal
 from app.models.monitoring import Notification, NotificationDelivery
@@ -16,11 +17,18 @@ def _deliver_pending():
     db = SessionLocal()
     try:
         settings = _get_all(db)
-        pending = db.query(Notification).filter(Notification.severity.in_(("critical", "warning", "recovery"))).order_by(Notification.id).limit(100).all()
+        # Only claim notifications with no prior Telegram attempt. The previous
+        # implementation repeatedly scanned the oldest delivered rows and could
+        # starve all notifications after the first 100.
+        pending = db.query(Notification).outerjoin(
+            NotificationDelivery,
+            and_(NotificationDelivery.notification_id == Notification.id,
+                 NotificationDelivery.channel == "telegram"),
+        ).filter(
+            Notification.severity.in_(("critical", "warning", "recovery")),
+            NotificationDelivery.id.is_(None),
+        ).order_by(Notification.id).limit(100).all()
         for notification in pending:
-            if db.query(NotificationDelivery).filter(NotificationDelivery.notification_id == notification.id,
-                                                      NotificationDelivery.channel == "telegram").first():
-                continue
             delivery = NotificationDelivery(notification_id=notification.id, channel="telegram")
             db.add(delivery)
             if settings.get("notify_telegram_enabled") != "true":

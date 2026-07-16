@@ -135,7 +135,7 @@ class TestConnectionRequest(BaseModel):
 @router.post("/test-connection")
 def test_connection(
     data: TestConnectionRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("routers:edit")),
 ):
     from app.services.routeros_service import RouterOSConnection
 

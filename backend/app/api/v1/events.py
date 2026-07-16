@@ -336,7 +336,7 @@ def counts_by_severity(
 
 
 @router.post("/refresh")
-def refresh_logs():
+def refresh_logs(current_user: User = Depends(require_permission("settings:edit"))):
     fetch_all_logs()
     return {"status": "ok"}
 

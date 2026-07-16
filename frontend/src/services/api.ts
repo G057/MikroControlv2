@@ -1,6 +1,7 @@
 import type { User, RouterDevice, RouterGroup, RouterTag, DashboardData, DashboardCharts, AuditLogEntry, InventoryItem, Alert, AlertRule, ConfigTemplate, Backup, MonitorRouter, MonitorResponse } from '../types';
 
 const API_BASE = '/api/v1';
+const REQUEST_TIMEOUT_MS = 15_000;
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('mc_token');
@@ -12,7 +13,17 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, { ...options, headers, signal: controller.signal });
+  } catch (error) {
+    if ((error as Error).name === 'AbortError') throw new Error('La solicitud excedió 15 segundos');
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
 
   if (response.status === 401) {
     localStorage.removeItem('mc_token');

@@ -20,7 +20,7 @@ class ResolveRequest(BaseModel):
 @router.get("/unresolved-count")
 def unresolved_count(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("events:view")),
 ):
     visible_ids = get_visible_router_ids(current_user, db)
     count_q = db.query(func.count(Alert.id)).filter(Alert.is_resolved == False)
@@ -45,7 +45,7 @@ def list_alerts(
     alert_type: str = None,
     router_id: int = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("events:view")),
 ):
     visible_ids = get_visible_router_ids(current_user, db)
     query = db.query(Alert)
@@ -73,6 +73,9 @@ def resolve_alert(
     alert = db.query(Alert).filter(Alert.id == alert_id).first()
     if not alert:
         raise HTTPException(status_code=404, detail="Alerta no encontrada")
+    visible_ids = get_visible_router_ids(current_user, db)
+    if visible_ids is not None and alert.router_id is not None and alert.router_id not in visible_ids:
+        raise HTTPException(status_code=404, detail="Alerta no encontrada")
     alert.is_resolved = True
     alert.resolved_at = datetime.now(timezone.utc)
     alert.resolved_by = current_user.username
@@ -86,12 +89,16 @@ def resolve_alert(
 def resolve_all_alerts(
     body: ResolveRequest = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("events:view")),
 ):
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
     comment = (body.comment if body and body.comment else None) or "Resolución masiva"
-    db.query(Alert).filter(Alert.is_resolved == False).update({
+    query = db.query(Alert).filter(Alert.is_resolved == False)
+    visible_ids = get_visible_router_ids(current_user, db)
+    if visible_ids is not None:
+        query = query.filter((Alert.router_id.is_(None)) | (Alert.router_id.in_(visible_ids)))
+    query.update({
         "is_resolved": True,
         "resolved_at": now,
         "resolved_by": current_user.username,

@@ -71,6 +71,7 @@ export default function MonitorPage() {
   const notificationCursorRef = useRef(0);
   const receivedNotificationIds = useRef(new Set<number>());
   const playedNotificationIds = useRef(new Set<number>());
+  const deferredNotificationsRef = useRef<MonitorNotification[]>([]);
   const pollingRef = useRef(false);
   const popupsPausedRef = useRef(popupsPaused);
   popupsPausedRef.current = popupsPaused;
@@ -141,6 +142,21 @@ export default function MonitorPage() {
     if (!played) setAudioStatus('blocked');
   };
 
+  const presentNotifications = useCallback((items: MonitorNotification[]) => {
+    if (!items.length) return;
+    setAlertPopups(prev => {
+      const critical = [...prev.filter(item => item.severity === 'critical'), ...items.filter(item => item.popupRequired && item.severity === 'critical')];
+      const other = [...prev.filter(item => item.severity !== 'critical'), ...items.filter(item => item.popupRequired && item.severity !== 'critical')].slice(-50);
+      return [...critical, ...other];
+    });
+    for (const item of items) {
+      if (item.soundRequired && !mutedRef.current && !playedNotificationIds.current.has(item.id)) {
+        playedNotificationIds.current.add(item.id);
+        void playAlertSound();
+      }
+    }
+  }, [playAlertSound]);
+
   const fetchData = useCallback(async () => {
     if (pollingRef.current) return;
     pollingRef.current = true;
@@ -160,18 +176,10 @@ export default function MonitorPage() {
         // The first load intentionally excludes acknowledged history, but pending
         // notifications still require delivery after a reload or brief disconnect.
         const displayable = fresh;
-        if (!popupsPausedRef.current && displayable.length) {
-          setAlertPopups(prev => {
-            const critical = [...prev.filter(item => item.severity === 'critical'), ...fresh.filter(item => item.popupRequired && item.severity === 'critical')];
-            const other = [...prev.filter(item => item.severity !== 'critical'), ...displayable.filter(item => item.popupRequired && item.severity !== 'critical')].slice(-50);
-            return [...critical, ...other];
-          });
-          for (const item of displayable) {
-            if (item.soundRequired && !mutedRef.current && !playedNotificationIds.current.has(item.id)) {
-              playedNotificationIds.current.add(item.id);
-              void playAlertSound();
-            }
-          }
+        if (popupsPausedRef.current) {
+          deferredNotificationsRef.current.push(...displayable);
+        } else {
+          presentNotifications(displayable);
         }
       }
       const resp = await monitorRequest;
@@ -179,7 +187,7 @@ export default function MonitorPage() {
       sinceEventLogRef.current = resp.max_event_log_id;
     } catch (error) { console.warn('Monitor polling failed', error); }
     finally { pollingRef.current = false; }
-  }, []);
+  }, [presentNotifications]);
 
   useEffect(() => {
     fetchData();
@@ -352,7 +360,14 @@ export default function MonitorPage() {
             <button onClick={() => void enableAndTestSound()} className="px-2 py-1 rounded-lg text-xs" style={{ color: audioStatus === 'ready' ? c.green : c.orange, border: `1px solid ${c.border}` }} title="Habilitar y probar sonido">
               {audioStatus === 'ready' ? 'Sonido activo' : 'Activar sonido'}
             </button>
-            <button onClick={() => setPopupsPaused(!popupsPaused)} className="px-2 py-1 rounded-lg text-xs" style={{ color: popupsPaused ? c.textMuted : c.accent, border: `1px solid ${c.border}` }} title="Pausar o reanudar popups">
+            <button onClick={() => {
+              const nextPaused = !popupsPaused;
+              setPopupsPaused(nextPaused);
+              if (!nextPaused) {
+                const deferred = deferredNotificationsRef.current.splice(0);
+                presentNotifications(deferred);
+              }
+            }} className="px-2 py-1 rounded-lg text-xs" style={{ color: popupsPaused ? c.textMuted : c.accent, border: `1px solid ${c.border}` }} title="Pausar o reanudar popups">
               {popupsPaused ? 'Reanudar' : 'Pausar'}
             </button>
             <button onClick={toggleTheme} className="p-2 rounded-lg transition-colors" style={{ color: c.textMuted }} title={isDark ? 'Modo día' : 'Modo noche'}>

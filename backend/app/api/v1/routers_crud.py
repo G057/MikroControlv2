@@ -171,7 +171,12 @@ def delete_router(
     from app.models.router_history import RouterHistory
     from app.models.interface_traffic import InterfaceTrafficSample
     from app.models.interface_counter_state import InterfaceCounterState
+    from app.models.monitoring import Notification, NotificationDelivery, RouterConnectivityState
 
+    notification_ids = db.query(Notification.id).filter(Notification.router_id == router_id)
+    db.query(NotificationDelivery).filter(NotificationDelivery.notification_id.in_(notification_ids)).delete(synchronize_session=False)
+    db.query(Notification).filter(Notification.router_id == router_id).delete(synchronize_session=False)
+    db.query(RouterConnectivityState).filter(RouterConnectivityState.router_id == router_id).delete(synchronize_session=False)
     db.query(Alert).filter(Alert.router_id == router_id).delete()
     db.query(EventLog).filter(EventLog.router_id == router_id).delete()
     db.query(Backup).filter(Backup.router_id == router_id).delete()
