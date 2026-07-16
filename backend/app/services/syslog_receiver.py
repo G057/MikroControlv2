@@ -72,7 +72,7 @@ def _parse_syslog(msg_bytes: bytes):
             "raw_message": text[:8000]}
 
 
-def _find_router(db, source_ip, hostname):
+def _find_router(db, source_ip, hostname, raw_message):
     # An explicit source address is authoritative. Never choose a non-unique fallback.
     candidates = db.query(Router).filter(Router.ip_address == source_ip).all()
     if len(candidates) == 1:
@@ -83,6 +83,20 @@ def _find_router(db, source_ip, hostname):
         if len(matches) == 1:
             return matches[0], []
         candidates.extend(matches)
+
+    # RFC3164 hostnames should not contain spaces, but RouterOS identities often
+    # do. Match only a complete configured identifier at the beginning of the
+    # post-timestamp payload; never infer from message text elsewhere.
+    payload = re.sub(r"^<\d{1,3}>\s*(?:\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+)?", "", raw_message or "", flags=re.IGNORECASE)
+    header_matches = []
+    for router in db.query(Router).all():
+        for value in (router.identity, router.name, router.hostname):
+            if value and payload.lower().startswith(f"{value.lower()} "):
+                header_matches.append(router)
+                break
+    if len(header_matches) == 1:
+        return header_matches[0], []
+    candidates.extend(header_matches)
     return None, sorted({router.id for router in candidates})
 
 
@@ -104,7 +118,7 @@ def _handle_message(msg_bytes, source_ip):
             _store_unmatched(db, source_ip, {"raw_message": msg_bytes.decode("utf-8", "replace")[:8000]}, str(exc), [])
             db.commit()
             return
-        router, candidates = _find_router(db, source_ip, parsed["hostname"])
+        router, candidates = _find_router(db, source_ip, parsed["hostname"], parsed["raw_message"])
         if not router:
             _store_unmatched(db, source_ip, parsed, "ambiguous_router" if candidates else "router_not_found", candidates)
             db.commit()
