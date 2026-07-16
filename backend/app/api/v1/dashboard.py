@@ -143,50 +143,38 @@ def get_charts(db: Session = Depends(get_db), current_user: User = Depends(get_c
         .all()
     )
 
-    all_events_q = db.query(EventLog.topics)
+    all_events_q = db.query(EventLog.topics, func.count(EventLog.id))
     if ev_filter is not None:
         all_events_q = all_events_q.filter(ev_filter)
-    all_events = all_events_q.all()
+    all_events = all_events_q.group_by(EventLog.topics).all()
     topic_counts: dict[str, int] = {}
-    for row in all_events:
-        if not row.topics:
+    for topics, count in all_events:
+        if not topics:
             continue
-        for t in row.topics.split(","):
+        for t in topics.split(","):
             t = t.strip()
             if t:
-                topic_counts[t] = topic_counts.get(t, 0) + 1
+                topic_counts[t] = topic_counts.get(t, 0) + count
     top_topics = sorted(topic_counts.items(), key=lambda x: x[1], reverse=True)[:10]
 
     now = datetime.utcnow()
+    hour_start = now - timedelta(hours=23)
+    bucket = func.date_trunc("hour", EventLog.first_seen).label("bucket")
+    hourly_q = db.query(bucket, EventLog.severity, func.count(EventLog.id)).filter(EventLog.first_seen >= hour_start)
+    if ev_filter is not None:
+        hourly_q = hourly_q.filter(ev_filter)
+    hourly = {(row[0].replace(tzinfo=None), row[1]): row[2] for row in hourly_q.group_by(bucket, EventLog.severity).all()}
     severity_by_hour = []
     for i in range(24):
-        h = (now - timedelta(hours=23 - i)).hour
-        day = (now - timedelta(hours=23 - i)).date()
-        hour_start = datetime.combine(day, datetime.min.time().replace(hour=h))
-        hour_end = hour_start + timedelta(hours=1)
-        c = db.query(func.count(EventLog.id)).filter(
-            EventLog.first_seen >= hour_start, EventLog.first_seen < hour_end
-        )
-        w = db.query(func.count(EventLog.id)).filter(
-            EventLog.first_seen >= hour_start, EventLog.first_seen < hour_end,
-            EventLog.severity == "warning"
-        )
-        cr = db.query(func.count(EventLog.id)).filter(
-            EventLog.first_seen >= hour_start, EventLog.first_seen < hour_end,
-            EventLog.severity == "critical"
-        )
-        if ev_filter is not None:
-            c = c.filter(ev_filter)
-            w = w.filter(ev_filter)
-            cr = cr.filter(ev_filter)
-        c = c.scalar() or 0
-        w = w.scalar() or 0
-        cr = cr.scalar() or 0
+        point = (now - timedelta(hours=23 - i)).replace(minute=0, second=0, microsecond=0, tzinfo=None)
+        w = hourly.get((point, "warning"), 0)
+        cr = hourly.get((point, "critical"), 0)
+        total = sum(hourly.get((point, severity), 0) for severity in ("critical", "warning", "info", "recovery"))
         severity_by_hour.append({
-            "hour": f"{h:02d}:00",
+            "hour": point.strftime("%H:00"),
             "critical": cr,
             "warning": w,
-            "info": max(0, c - w - cr),
+            "info": max(0, total - w - cr),
         })
 
     online_q = db.query(func.count(Router.id)).filter(Router.is_online == True)

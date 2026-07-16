@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -20,6 +21,8 @@ import SystemSettingsPage from './pages/SystemSettingsPage';
 import RolesPage from './pages/RolesPage';
 import MonitorPage from './pages/MonitorPage';
 import WizardPage from './pages/WizardPage';
+const EventExplorerPage = lazy(() => import('./pages/EventExplorerPage'));
+const EventReportPage = lazy(() => import('./pages/EventReportPage'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -79,6 +82,8 @@ function AppRoutes() {
         <Route path="users" element={<RequirePermission permission="users:view"><UsersPage /></RequirePermission>} />
         <Route path="roles" element={<RequirePermission permission="roles:manage"><RolesPage /></RequirePermission>} />
         <Route path="events" element={<RequirePermission permission="events:view"><AlertsPage /></RequirePermission>} />
+        <Route path="events/explorer" element={<RequirePermission permission="events:view"><Suspense fallback={<div>Cargando explorador...</div>}><EventExplorerPage /></Suspense></RequirePermission>} />
+        <Route path="events/report" element={<RequirePermission permission="events:view"><Suspense fallback={<div>Cargando informes...</div>}><EventReportPage /></Suspense></RequirePermission>} />
         <Route path="backups" element={<RequirePermission permission="routers:backup"><BackupsPage /></RequirePermission>} />
         <Route path="audit" element={<RequirePermission permission="audit:view"><AuditPage /></RequirePermission>} />
         <Route path="terminal" element={<RequirePermission permission="routers:terminal"><TerminalPage /></RequirePermission>} />

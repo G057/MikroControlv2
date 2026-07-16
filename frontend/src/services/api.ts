@@ -503,7 +503,22 @@ export const eventsAPI = {
   },
   refresh: () => request('/events/refresh', { method: 'POST' }),
   categories: () => request<{ key: string; label: string }[]>('/events/categories'),
+  explorer: (params: { router_id?: number; severity?: string; search?: string; date_from?: string; date_to?: string; page?: number; page_size?: number }) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => { if (value !== undefined && value !== '') query.set(key, String(value)); });
+    return request<EventExplorerResponse>(`/events/explorer?${query}`);
+  },
+  report: (router_id: number, date_from?: string, date_to?: string) => {
+    const query = new URLSearchParams({ router_id: String(router_id) });
+    if (date_from) query.set('date_from', date_from);
+    if (date_to) query.set('date_to', date_to);
+    return request<EventReport>(`/events/report?${query}`);
+  },
 };
+
+export interface EventExplorerItem { id: number; routerId: number; routerName: string; severity: string; eventType: string; topics: string; message: string; source: string; receivedAt: string; routerTime: string; }
+export interface EventExplorerResponse { total: number; page: number; pageSize: number; items: EventExplorerItem[]; }
+export interface EventReport { router: { id: number; name: string; clientName: string | null }; summary: { total: number; critical: number; warning: number; info: number }; series: { date: string; critical: number; warning: number; info: number }[]; from: string | null; to: string | null; }
 
 export interface SystemBackupItem {
   filename: string;

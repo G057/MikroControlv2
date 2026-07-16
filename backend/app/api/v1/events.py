@@ -2,7 +2,7 @@ import asyncio, json, logging
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from app.core.database import get_db
 from app.core.security import get_current_user, get_user_permissions, require_permission
 from app.models.user import User
@@ -15,7 +15,7 @@ from app.core.datetime_utils import utc_iso
 from pydantic import BaseModel
 from typing import Optional
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -345,6 +345,90 @@ def refresh_logs(current_user: User = Depends(require_permission("settings:edit"
 @router.get("/categories")
 def event_categories():
     return event_filter.EVENT_CATEGORIES
+
+
+def _parse_date(value: Optional[str], end: bool = False):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Fecha inválida; usá ISO-8601")
+
+
+@router.get("/explorer")
+def explore_events(
+    router_id: Optional[int] = None,
+    severity: Optional[str] = None,
+    search: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("events:view")),
+):
+    visible_ids = get_visible_router_ids(current_user, db)
+    if visible_ids is not None and router_id is not None and router_id not in visible_ids:
+        raise HTTPException(status_code=404, detail="Router no encontrado")
+    q = db.query(EventLog)
+    if visible_ids is not None:
+        q = q.filter(EventLog.router_id.in_(visible_ids))
+    if router_id:
+        q = q.filter(EventLog.router_id == router_id)
+    if severity:
+        q = q.filter(EventLog.severity == severity)
+    if search:
+        q = q.filter(EventLog.message.ilike(f"%{search.strip()}%"))
+    start, end = _parse_date(date_from), _parse_date(date_to)
+    if start:
+        q = q.filter(EventLog.first_seen >= start)
+    if end:
+        q = q.filter(EventLog.first_seen <= end)
+    total = q.count()
+    rows = q.order_by(EventLog.first_seen.desc(), EventLog.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return {"total": total, "page": page, "pageSize": page_size, "items": [
+        {"id": e.id, "routerId": e.router_id, "routerName": e.router_name, "severity": e.severity,
+         "eventType": e.event_type, "topics": e.topics, "message": e.message,
+         "source": e.source, "receivedAt": utc_iso(e.first_seen), "routerTime": e.ros_time}
+        for e in rows
+    ]}
+
+
+@router.get("/report")
+def event_report(
+    router_id: int,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("events:view")),
+):
+    visible_ids = get_visible_router_ids(current_user, db)
+    if visible_ids is not None and router_id not in visible_ids:
+        raise HTTPException(status_code=404, detail="Router no encontrado")
+    from app.models.router import Router
+    router_row = db.get(Router, router_id)
+    if not router_row:
+        raise HTTPException(status_code=404, detail="Router no encontrado")
+    q = db.query(EventLog).filter(EventLog.router_id == router_id)
+    start, end = _parse_date(date_from), _parse_date(date_to)
+    if start:
+        q = q.filter(EventLog.first_seen >= start)
+    if end:
+        q = q.filter(EventLog.first_seen <= end)
+    summary = dict(q.with_entities(EventLog.severity, func.count(EventLog.id)).group_by(EventLog.severity).all())
+    bucket = func.date_trunc("day", EventLog.first_seen).label("bucket")
+    rows = q.with_entities(bucket, EventLog.severity, func.count(EventLog.id)).group_by(bucket, EventLog.severity).order_by(bucket).all()
+    series = {}
+    for day, sev, count in rows:
+        key = utc_iso(day)[:10]
+        series.setdefault(key, {"date": key, "critical": 0, "warning": 0, "info": 0})[sev if sev in ("critical", "warning", "info") else "info"] = count
+    return {"router": {"id": router_row.id, "name": router_row.name, "clientName": router_row.client_name},
+            "summary": {"total": sum(summary.values()), "critical": summary.get("critical", 0), "warning": summary.get("warning", 0), "info": summary.get("info", 0)},
+            "series": list(series.values()), "from": date_from, "to": date_to}
 
 
 @router.get("/stream")
