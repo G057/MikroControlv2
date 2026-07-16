@@ -36,6 +36,8 @@ def classify(topics: str, message: str, severity: str | None = None) -> tuple[st
         return "ping_loss", severity or "warning"
     if "phase1 negotiation failed" in text:
         return "vpn_down", severity or "critical"
+    if "detected conflict by arp response" in text:
+        return "arp_conflict", severity if severity in ("critical", "warning") else "warning"
     if "account" in topic_set and ("failure" in text or "failed" in text):
         return "login_failure", severity or "warning"
     if "critical" in topic_set or "error" in topic_set:
@@ -85,6 +87,13 @@ def _active_alert(db, router_id: int, key: str):
 def ingest_event(db, item: NormalizedEvent, create_alert: bool = True, create_notification: bool = True):
     """Persists one event. Duplicate deliveries update occurrence metadata only."""
     canonical_hash, deduplication_key = item.normalized()
+    from app.core.event_filter import event_matches_filter, load_json_setting
+    for rule in load_json_setting(db, "event_classification_rules"):
+        if rule.get("enabled", True) and event_matches_filter(item.message, item.topics, rule):
+            item.event_type = rule["event_type"]
+            item.severity = rule["severity"]
+            canonical_hash, deduplication_key = item.normalized()
+            break
     existing = db.query(EventLog).filter(EventLog.canonical_hash == canonical_hash).first()
     if existing:
         existing.last_seen = item.received_timestamp

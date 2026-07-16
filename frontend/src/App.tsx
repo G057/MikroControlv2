@@ -21,6 +21,7 @@ import SystemSettingsPage from './pages/SystemSettingsPage';
 import RolesPage from './pages/RolesPage';
 import MonitorPage from './pages/MonitorPage';
 import WizardPage from './pages/WizardPage';
+import NotificationFiltersPage from './pages/NotificationFiltersPage';
 const EventExplorerPage = lazy(() => import('./pages/EventExplorerPage'));
 const EventReportPage = lazy(() => import('./pages/EventReportPage'));
 
@@ -84,6 +85,7 @@ function AppRoutes() {
         <Route path="events" element={<RequirePermission permission="events:view"><AlertsPage /></RequirePermission>} />
         <Route path="events/explorer" element={<RequirePermission permission="events:view"><Suspense fallback={<div>Cargando explorador...</div>}><EventExplorerPage /></Suspense></RequirePermission>} />
         <Route path="events/report" element={<RequirePermission permission="events:view"><Suspense fallback={<div>Cargando informes...</div>}><EventReportPage /></Suspense></RequirePermission>} />
+        <Route path="notification-filters" element={<RequirePermission permission="settings:edit"><NotificationFiltersPage /></RequirePermission>} />
         <Route path="backups" element={<RequirePermission permission="routers:backup"><BackupsPage /></RequirePermission>} />
         <Route path="audit" element={<RequirePermission permission="audit:view"><AuditPage /></RequirePermission>} />
         <Route path="terminal" element={<RequirePermission permission="routers:terminal"><TerminalPage /></RequirePermission>} />

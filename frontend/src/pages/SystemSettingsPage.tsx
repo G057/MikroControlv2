@@ -919,7 +919,7 @@ function LogoEditTab({ c }: { c: any }) {
   );
 }
 
-function EventFiltersTab({ c }: { c: any }) {
+export function EventFiltersTab({ c }: { c: any }) {
   const [subTab, setSubTab] = useState<'exclusion' | 'popup' | 'telegram'>('exclusion');
   const [exclusionFilters, setExclusionFilters] = useState<EventFilterRule[]>([]);
   const [popupFilters, setPopupFilters] = useState<EventFilterRule[]>([]);

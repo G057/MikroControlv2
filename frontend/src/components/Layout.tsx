@@ -5,7 +5,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import {
   LayoutDashboard, Server, Users, Bell,
   HardDrive, ClipboardList, Terminal, LogOut, Shield, Menu, X, Network,
-  Sun, Moon, Settings, Layers, Radio, Wrench, Search, BarChart3
+  Sun, Moon, Settings, Layers, Radio, Wrench, Search, BarChart3, SlidersHorizontal
 } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { alertsAPI, logoAPI, versionAPI } from '../services/api';
@@ -27,6 +27,7 @@ const navGroups: { label?: string; items: NavNode[] }[] = [
       { to: '/events', icon: Bell, label: 'Eventos', permission: 'events:view' },
       { to: '/events/explorer', icon: Search, label: 'Explorador de Eventos', permission: 'events:view' },
       { to: '/events/report', icon: BarChart3, label: 'Informes de Eventos', permission: 'events:view' },
+      { to: '/notification-filters', icon: SlidersHorizontal, label: 'Filtros de Notificación', permission: 'settings:edit' },
       { to: '/audit', icon: ClipboardList, label: 'Auditoría', permission: 'audit:view' },
     ],
   },
