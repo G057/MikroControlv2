@@ -370,6 +370,7 @@ def _parse_date(value: Optional[str], end: bool = False):
 def explore_events(
     router_id: Optional[int] = None,
     severity: Optional[str] = None,
+    event_type: Optional[str] = None,
     search: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
@@ -388,6 +389,8 @@ def explore_events(
         q = q.filter(EventLog.router_id == router_id)
     if severity:
         q = q.filter(EventLog.severity == severity)
+    if event_type:
+        q = q.filter(EventLog.event_type == event_type)
     if search:
         q = q.filter(EventLog.message.ilike(f"%{search.strip()}%"))
     start, end = _parse_date(date_from), _parse_date(date_to, end=True)
@@ -408,6 +411,7 @@ def explore_events(
 @router.get("/report")
 def event_report(
     router_id: int,
+    event_type: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -421,6 +425,8 @@ def event_report(
     if not router_row:
         raise HTTPException(status_code=404, detail="Router no encontrado")
     q = db.query(EventLog).filter(EventLog.router_id == router_id)
+    if event_type:
+        q = q.filter(EventLog.event_type == event_type)
     start, end = _parse_date(date_from), _parse_date(date_to, end=True)
     if start:
         q = q.filter(EventLog.first_seen >= start)

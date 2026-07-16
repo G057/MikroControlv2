@@ -651,7 +651,7 @@ def update_event_classification_rules(
 
 
 @router.get("/filter-gallery")
-def get_filter_gallery(db: Session = Depends(get_db), _: User = Depends(require_permission("settings:edit"))):
+def get_filter_gallery(db: Session = Depends(get_db), _: User = Depends(require_permission("events:view"))):
     from app.core.event_filter import load_json_setting
     return {"filters": load_json_setting(db, "filter_gallery")}
 
