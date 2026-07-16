@@ -518,7 +518,7 @@ export const eventsAPI = {
 
 export interface EventExplorerItem { id: number; routerId: number; routerName: string; severity: string; eventType: string; topics: string; message: string; source: string; receivedAt: string; routerTime: string; }
 export interface EventExplorerResponse { total: number; page: number; pageSize: number; items: EventExplorerItem[]; }
-export interface EventReport { router: { id: number; name: string; clientName: string | null }; summary: { total: number; critical: number; warning: number; info: number }; series: { date: string; critical: number; warning: number; info: number }[]; from: string | null; to: string | null; }
+export interface EventReport { router: { id: number; name: string; clientName: string | null }; summary: { total: number; critical: number; warning: number; info: number }; series: { date: string; critical: number; warning: number; info: number }[]; from: string | null; to: string | null; periodDays: number; }
 
 export interface SystemBackupItem {
   filename: string;

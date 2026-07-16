@@ -434,9 +434,12 @@ def event_report(
         key = utc_iso(day)[:10]
         target = sev if sev in ("critical", "warning", "info") else "info"
         series.setdefault(key, {"date": key, "critical": 0, "warning": 0, "info": 0})[target] += count
+    period_days = max(1, ((end or datetime.now(timezone.utc)) - (start or (end or datetime.now(timezone.utc)))).days)
+    if not start and not end:
+        period_days = max(1, len(series))
     return {"router": {"id": router_row.id, "name": router_row.name, "clientName": router_row.client_name},
             "summary": {"total": sum(summary.values()), "critical": summary.get("critical", 0), "warning": summary.get("warning", 0), "info": summary.get("info", 0)},
-            "series": list(series.values()), "from": date_from, "to": date_to}
+            "series": list(series.values()), "from": date_from, "to": date_to, "periodDays": period_days}
 
 
 @router.get("/stream")
