@@ -2,7 +2,7 @@
 import hashlib
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from sqlalchemy.exc import IntegrityError
 
@@ -87,13 +87,27 @@ def _active_alert(db, router_id: int, key: str):
 def ingest_event(db, item: NormalizedEvent, create_alert: bool = True, create_notification: bool = True):
     """Persists one event. Duplicate deliveries update occurrence metadata only."""
     canonical_hash, deduplication_key = item.normalized()
-    from app.core.event_filter import event_matches_filter, load_json_setting
+    from app.core.event_filter import event_matches_filter, load_json_setting, load_storage_filters, is_event_excluded
+    if item.source == "syslog" and is_event_excluded(item.message, item.topics, load_storage_filters(db)):
+        return None, False, None, None
     for rule in load_json_setting(db, "event_classification_rules"):
         if rule.get("enabled", True) and event_matches_filter(item.message, item.topics, rule):
             item.event_type = rule["event_type"]
             item.severity = rule["severity"]
             canonical_hash, deduplication_key = item.normalized()
             break
+    from app.api.v1.settings import get_setting
+    try:
+        window_minutes = max(1, int(get_setting(db, "event_consolidation_minutes", "5")))
+    except ValueError:
+        window_minutes = 5
+    repeated = db.query(EventLog).filter(EventLog.router_id == item.router_id, EventLog.source == item.source,
+                                         EventLog.deduplication_key == deduplication_key,
+                                         EventLog.last_seen >= item.received_timestamp - timedelta(minutes=window_minutes)).order_by(EventLog.id.desc()).first()
+    if repeated:
+        repeated.last_seen = item.received_timestamp
+        repeated.occurrence_count = (repeated.occurrence_count or 1) + 1
+        return repeated, False, None, None
     existing = db.query(EventLog).filter(EventLog.canonical_hash == canonical_hash).first()
     if existing:
         existing.last_seen = item.received_timestamp

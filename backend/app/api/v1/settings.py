@@ -86,6 +86,8 @@ DEFAULTS = {
     "telegram_exclusion_filters": "",
     "event_classification_rules": "[]",
     "filter_gallery": "[]",
+    "storage_exclusion_filters": "",
+    "event_consolidation_minutes": "5",
 }
 
 # Claves cuyo valor es un secreto: se cifran en reposo y se enmascaran al leer.
@@ -191,6 +193,8 @@ class SettingsUpdate(BaseModel):
     popup_exclusion_filters: Optional[str] = None
     telegram_exclusion_filters: Optional[str] = None
     event_classification_rules: Optional[str] = None
+    storage_exclusion_filters: Optional[str] = None
+    event_consolidation_minutes: Optional[str] = None
 
 
 class UserCreate(BaseModel):
@@ -659,6 +663,17 @@ def get_filter_gallery(db: Session = Depends(get_db), _: User = Depends(require_
 @router.put("/filter-gallery")
 def update_filter_gallery(data: dict, req: Request, db: Session = Depends(get_db), current_user: User = Depends(require_permission("settings:edit"))):
     return _save_filter_setting(db, "filter_gallery", data, current_user, req)
+
+
+@router.get("/storage-filters")
+def get_storage_filters(db: Session = Depends(get_db), _: User = Depends(require_permission("settings:edit"))):
+    from app.core.event_filter import load_storage_filters
+    return {"filters": load_storage_filters(db)}
+
+
+@router.put("/storage-filters")
+def update_storage_filters(data: dict, req: Request, db: Session = Depends(get_db), current_user: User = Depends(require_permission("settings:edit"))):
+    return _save_filter_setting(db, "storage_exclusion_filters", data, current_user, req)
 
 
 @router.get("/users")

@@ -95,6 +95,16 @@ def load_telegram_filters(db: Session) -> list:
     return load_json_setting(db, "telegram_exclusion_filters")
 
 
+DEFAULT_STORAGE_FILTERS = [
+    {"id": "technical-api-login", "name": "Logins API técnicos", "pattern": "user mikrocon* logged * via api", "mode": "wildcard", "field": "message", "enabled": True},
+]
+
+
+def load_storage_filters(db: Session) -> list:
+    rules = load_json_setting(db, "storage_exclusion_filters")
+    return rules if rules else DEFAULT_STORAGE_FILTERS
+
+
 def event_matches_filter(message: str, topics: str, filt: dict) -> bool:
     """Evalúa una regla de exclusión contra un evento según su modo y campo."""
     pattern = (filt.get("pattern") or "").strip()

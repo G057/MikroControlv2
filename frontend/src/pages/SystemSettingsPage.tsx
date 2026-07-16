@@ -921,12 +921,13 @@ function LogoEditTab({ c }: { c: any }) {
 }
 
 export function EventFiltersTab({ c }: { c: any }) {
-  const [subTab, setSubTab] = useState<'exclusion' | 'popup' | 'telegram'>('exclusion');
+  const [subTab, setSubTab] = useState<'exclusion' | 'popup' | 'telegram' | 'storage'>('exclusion');
   const [exclusionFilters, setExclusionFilters] = useState<EventFilterRule[]>([]);
   const [popupFilters, setPopupFilters] = useState<EventFilterRule[]>([]);
   const [telegramFilters, setTelegramFilters] = useState<EventFilterRule[]>([]);
   const [roles, setRoles] = useState<{ name: string }[]>([]);
   const [gallery, setGallery] = useState<EventFilterRule[]>([]);
+  const [storageFilters, setStorageFilters] = useState<EventFilterRule[]>([]);
   const [loading, setLoading] = useState(false);
 
   const load = () => {
@@ -936,13 +937,15 @@ export function EventFiltersTab({ c }: { c: any }) {
       settingsAPI.popupFilters(),
        settingsAPI.telegramFilters(),
        settingsAPI.filterGallery(),
+       settingsAPI.storageFilters(),
        rolesAPI.list(),
     ])
-      .then(([ex, pop, tg, gal, rl]) => {
+      .then(([ex, pop, tg, gal, storage, rl]) => {
         setExclusionFilters(ex.filters);
         setPopupFilters(pop.filters);
         setTelegramFilters(tg.filters);
         setGallery(gal.filters);
+        setStorageFilters(storage.filters);
         setRoles(rl.map(x => ({ name: x.name })));
       })
       .catch(e => toast.error(e.message))
@@ -954,6 +957,7 @@ export function EventFiltersTab({ c }: { c: any }) {
     { id: 'exclusion' as const, label: 'Exclusión (Eventos)', desc: 'Ocultar eventos de la vista de Eventos' },
     { id: 'popup' as const, label: 'Popup', desc: 'Qué eventos NO muestran popup en el Monitor' },
     { id: 'telegram' as const, label: 'Telegram', desc: 'Qué eventos NO envían notificación a Telegram' },
+    { id: 'storage' as const, label: 'No guardar', desc: 'Qué eventos Syslog no se guardan en la base de datos' },
   ];
 
   return (
@@ -996,7 +1000,7 @@ export function EventFiltersTab({ c }: { c: any }) {
             </>
           }
         />
-      ) : (
+      ) : subTab === 'telegram' ? (
         <EventFilterRulesEditor
           value={telegramFilters}
           onChange={async next => { const r = await settingsAPI.updateTelegramFilters(next); setTelegramFilters(r.filters); toast.success('Filtros telegram guardados'); }}
@@ -1008,6 +1012,14 @@ export function EventFiltersTab({ c }: { c: any }) {
               <p>Los eventos que coincidan con estas reglas NO enviarán notificación a Telegram. Las desconexiones críticas (router offline) siempre notifican aunque coincidan. Dejá la lista vacía para notificar todos los eventos.</p>
             </>
           }
+        />
+      ) : (
+        <EventFilterRulesEditor
+          value={storageFilters}
+          onChange={async next => { const r = await settingsAPI.updateStorageFilters(next); setStorageFilters(r.filters); toast.success('Filtros de almacenamiento guardados'); }}
+          rolesOptions={roles}
+          gallery={gallery}
+          helper={<><p className="font-medium mb-1" style={{ color: c.textSecondary }}>No guardar en base de datos</p><p>Los Syslog que coincidan no se persisten ni generan alerta, popup o Telegram. La regla inicial excluye los login/logout API de cuentas técnicas de MikroControl.</p></>}
         />
       )}
     </div>

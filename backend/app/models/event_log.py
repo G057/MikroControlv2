@@ -24,6 +24,7 @@ class EventLog(Base):
     received_timestamp = Column(DateTime(timezone=True), nullable=True, index=True)
     event_timestamp = Column(DateTime(timezone=True), nullable=True)
     metadata_json = Column(JSON, nullable=True)
+    occurrence_count = Column(Integer, nullable=False, default=1)
     first_seen = Column(DateTime(timezone=True), server_default=func.now())
     last_seen = Column(DateTime(timezone=True), server_default=func.now())
 

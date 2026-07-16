@@ -59,6 +59,7 @@ def _migrate():
             "received_timestamp": "TIMESTAMP",
             "event_timestamp": "TIMESTAMP",
             "metadata_json": "JSON",
+            "occurrence_count": "INTEGER NOT NULL DEFAULT 1",
         }
         with engine.begin() as conn:
             for name, definition in additions.items():
