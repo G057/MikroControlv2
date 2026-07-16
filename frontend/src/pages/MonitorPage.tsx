@@ -147,8 +147,9 @@ export default function MonitorPage() {
     const isFirst = !initializedRef.current;
     initializedRef.current = true;
     try {
-      const resp = await monitorAPI.list();
-      setRouters(resp.routers);
+      // Router status and notifications are independent. Do not make popup delivery
+      // wait for the comparatively heavier monitor summary query.
+      const monitorRequest = monitorAPI.list(sinceEventLogRef.current || undefined);
       let hasMore = true;
       while (hasMore) {
         const batch = await monitorAPI.notifications(notificationCursorRef.current);
@@ -173,6 +174,9 @@ export default function MonitorPage() {
           }
         }
       }
+      const resp = await monitorRequest;
+      setRouters(resp.routers);
+      sinceEventLogRef.current = resp.max_event_log_id;
     } catch (error) { console.warn('Monitor polling failed', error); }
     finally { pollingRef.current = false; }
   }, []);
