@@ -87,14 +87,17 @@ def _list_events(severity, topic, router_id, search, is_resolved, source, limit,
 
     if source != "router":
         has_sensitive = "routers:view_sensitive" in get_user_permissions(current_user)
-        aq = db.query(Alert)
+        from app.models.router import Router as RouterModel
+        aq = db.query(Alert, RouterModel.name).outerjoin(RouterModel, RouterModel.id == Alert.router_id)
         if severity:
             aq = aq.filter(Alert.severity == severity)
         if router_id:
             aq = aq.filter(Alert.router_id == router_id)
         if is_resolved is not None:
             aq = aq.filter(Alert.is_resolved == is_resolved)
-        for a in aq.order_by(desc(Alert.id)).all():
+        # The events page renders a bounded recent window. Loading every alert
+        # before applying role filters made initial render scale with all history.
+        for a, router_name in aq.order_by(desc(Alert.id)).limit(max(limit * 2, 500)).all():
             if router_blocked:
                 continue
             if visible_ids is not None and a.router_id is not None and a.router_id not in visible_ids:
@@ -106,14 +109,8 @@ def _list_events(severity, topic, router_id, search, is_resolved, source, limit,
                 continue
             if allowed_cats and not see_all and event_filter.classify_alert_category(a.alert_type) not in allowed_cats:
                 continue
-            router_name = ""
-            if a.router_id:
-                from app.models.router import Router as RouterModel
-                r = db.query(RouterModel).filter(RouterModel.id == a.router_id).first()
-                if r:
-                    router_name = r.name
             health_events.append({
-                "id": f"a_{a.id}", "router_id": a.router_id, "router_name": router_name,
+                "id": f"a_{a.id}", "router_id": a.router_id, "router_name": router_name or "",
                 "time": a.created_at.strftime("%m/%d %H:%M:%S") if a.created_at else "",
                 "topics": a.alert_type, "message": alert_msg,
                 "severity": a.severity,
@@ -143,7 +140,8 @@ def _list_events(severity, topic, router_id, search, is_resolved, source, limit,
             base_q = q.order_by(desc(EventLog.id))
             offset = 0
             batch = 500
-            max_fetched = 20000
+            # Avoid scanning the entire event history just to fill one page.
+            max_fetched = max(limit * 4, 1000)
             fetched = 0
             while len(router_events) < limit and fetched < max_fetched:
                 rows = base_q.limit(batch).offset(offset).all()

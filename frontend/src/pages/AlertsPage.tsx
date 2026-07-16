@@ -79,7 +79,9 @@ export default function EventsPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const params: any = { limit: 500 };
+      // Keep the first render responsive; the API default is also a recent
+      // window rather than the whole event history.
+      const params: any = { limit: 200 };
       if (severityFilter === 'unresolved') {
         params.is_resolved = false;
         params.source = 'health';
