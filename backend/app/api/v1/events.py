@@ -354,7 +354,10 @@ def _parse_date(value: Optional[str], end: bool = False):
         is_date_only = bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", value))
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
+            # Calendar controls are interpreted in the operational timezone,
+            # not UTC. Otherwise events from the last three local hours fall
+            # into the following UTC day and disappear from reports.
+            parsed = parsed.replace(tzinfo=timezone(timedelta(hours=-3))) if is_date_only else parsed.replace(tzinfo=timezone.utc)
         # HTML date inputs represent a calendar day, not midnight as an end.
         if end and is_date_only:
             parsed += timedelta(days=1)
@@ -429,7 +432,8 @@ def event_report(
     series = {}
     for day, sev, count in rows:
         key = utc_iso(day)[:10]
-        series.setdefault(key, {"date": key, "critical": 0, "warning": 0, "info": 0})[sev if sev in ("critical", "warning", "info") else "info"] = count
+        target = sev if sev in ("critical", "warning", "info") else "info"
+        series.setdefault(key, {"date": key, "critical": 0, "warning": 0, "info": 0})[target] += count
     return {"router": {"id": router_row.id, "name": router_row.name, "clientName": router_row.client_name},
             "summary": {"total": sum(summary.values()), "critical": summary.get("critical", 0), "warning": summary.get("warning", 0), "info": summary.get("info", 0)},
             "series": list(series.values()), "from": date_from, "to": date_to}
