@@ -2,12 +2,14 @@ import os
 import smtplib
 import json
 import subprocess
+import shutil
 import httpx
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
@@ -27,6 +29,13 @@ from app.models.audit import AuditLog
 from app.utils.audit import log_audit
 
 router = APIRouter()
+
+MANAGED_SERVICES = {
+    "mikrocontrol": "Backend MikroControl",
+    "nginx": "Nginx",
+    "postgresql": "PostgreSQL",
+    "redis-server": "Redis",
+}
 
 DEFAULTS = {
     "smtp_host": "",
@@ -195,6 +204,72 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
     role: Optional[str] = None
     is_active: Optional[bool] = None
+
+
+@router.get("/services")
+def get_services(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("settings:view")),
+):
+    def _memory():
+        values = {}
+        try:
+            with open("/proc/meminfo", encoding="utf-8") as handle:
+                for line in handle:
+                    key, value = line.split(":", 1)
+                    values[key] = int(value.strip().split()[0]) * 1024
+        except OSError:
+            return {"total": 0, "available": 0, "used": 0, "percent": 0}
+        total, available = values.get("MemTotal", 0), values.get("MemAvailable", 0)
+        used = max(0, total - available)
+        return {"total": total, "available": available, "used": used, "percent": round((used / total * 100) if total else 0, 1)}
+
+    services = []
+    for name, label in MANAGED_SERVICES.items():
+        result = subprocess.run(["systemctl", "is-active", name], capture_output=True, text=True, timeout=3, check=False)
+        services.append({"name": name, "label": label, "status": result.stdout.strip() or "unknown", "canRestart": name in ("mikrocontrol", "nginx", "postgresql")})
+    disk = shutil.disk_usage("/")
+    try:
+        database_size = db.execute(text("SELECT pg_database_size(current_database())")).scalar() or 0
+        database_connections = db.execute(text("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()")).scalar() or 0
+    except Exception:
+        database_size, database_connections = 0, 0
+    backup_size = 0
+    for root, _, files in os.walk("/opt/mikrocontrol/backups"):
+        for filename in files:
+            try:
+                backup_size += os.path.getsize(os.path.join(root, filename))
+            except OSError:
+                pass
+    try:
+        with open("/proc/uptime", encoding="utf-8") as handle:
+            uptime_seconds = int(float(handle.read().split()[0]))
+    except OSError:
+        uptime_seconds = 0
+    return {"services": services, "resources": {
+        "load": [round(value, 2) for value in os.getloadavg()],
+        "cpuCount": os.cpu_count() or 1, "memory": _memory(),
+        "disk": {"total": disk.total, "used": disk.used, "free": disk.free, "percent": round(disk.used / disk.total * 100, 1)},
+        "database": {"size": database_size, "connections": database_connections},
+        "backupsSize": backup_size, "uptimeSeconds": uptime_seconds,
+    }}
+
+
+@router.post("/services/{service_name}/restart")
+def restart_service(
+    service_name: str,
+    current_user: User = Depends(require_permission("settings:edit")),
+):
+    if service_name not in MANAGED_SERVICES or service_name == "redis-server":
+        raise HTTPException(status_code=404, detail="Servicio no administrable")
+    try:
+        # The systemd policy grants www-data only these exact restart commands.
+        result = subprocess.run(["sudo", "-n", "/bin/systemctl", "restart", service_name], capture_output=True, text=True, timeout=15, check=False)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="El reinicio excedió el tiempo máximo")
+    if result.returncode:
+        raise HTTPException(status_code=503, detail="No se pudo reiniciar. Verificá la política sudoers de MikroControl.")
+    return {"detail": f"{MANAGED_SERVICES[service_name]} reiniciado"}
 
 
 @router.get("/")

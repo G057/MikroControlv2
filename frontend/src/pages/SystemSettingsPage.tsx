@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { settingsAPI, rolesAPI, eventsAPI, logoAPI, systemBackupAPI, type SystemSettings, type OperatorUser, type EventFilterRule, type SystemBackupItem } from '../services/api';
+import { settingsAPI, rolesAPI, eventsAPI, logoAPI, systemBackupAPI, type SystemSettings, type OperatorUser, type EventFilterRule, type SystemBackupItem, type SystemServices } from '../services/api';
 import { useTheme } from '../contexts/ThemeContext';
 import EventFilterRulesEditor from '../components/EventFilterRulesEditor';
 import ErrorBoundary from '../components/ErrorBoundary';
@@ -685,6 +685,23 @@ function SyslogTab({ settings, onSave, c }: { settings: SystemSettings; onSave: 
   );
 }
 
+function ServicesTab({ c }: { c: any }) {
+  const [data, setData] = useState<SystemServices | null>(null);
+  const [loading, setLoading] = useState(false);
+  const load = () => settingsAPI.services().then(setData).catch((e: Error) => toast.error(e.message));
+  useEffect(() => { load(); const timer = setInterval(load, 15000); return () => clearInterval(timer); }, []);
+  const restart = async (name: string, label: string) => {
+    if (!confirm(`¿Reiniciar ${label}? El servicio tendrá una interrupción breve.`)) return;
+    setLoading(true);
+    try { await settingsAPI.restartService(name); toast.success(`${label} reiniciado`); setTimeout(load, 2000); }
+    catch (e: any) { toast.error(e.message); }
+    finally { setLoading(false); }
+  };
+  const bytes = (value: number) => value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(1)} GB` : `${(value / 1024 ** 2).toFixed(0)} MB`;
+  const uptime = (seconds: number) => `${Math.floor(seconds / 86400)}d ${Math.floor(seconds % 86400 / 3600)}h`;
+  return <div className="space-y-5"><div><h3 className="text-sm font-semibold" style={{ color: c.textPrimary }}>Servicios y Recursos</h3><p className="text-xs mt-1" style={{ color: c.textMuted }}>Monitoreo del servidor. Los reinicios están limitados a servicios de MikroControl; nunca reinician el sistema operativo.</p></div>{data && <><div className="grid grid-cols-1 md:grid-cols-3 gap-3">{[{ label: 'Memoria', percent: data.resources.memory.percent, detail: `${bytes(data.resources.memory.used)} usados` }, { label: 'Disco del servidor', percent: data.resources.disk.percent, detail: `${bytes(data.resources.disk.free)} libres de ${bytes(data.resources.disk.total)}` }, { label: 'Carga', percent: Math.min(100, data.resources.load[0] / data.resources.cpuCount * 100), detail: `${data.resources.load.join(' / ')} (${data.resources.cpuCount} CPU)` }, { label: 'Base de datos', percent: 0, detail: `${bytes(data.resources.database.size)} · ${data.resources.database.connections} conexiones` }, { label: 'Backups de routers', percent: 0, detail: bytes(data.resources.backupsSize) }, { label: 'Uptime del servidor', percent: 0, detail: uptime(data.resources.uptimeSeconds) }].map(item => <div key={item.label} className="rounded-lg p-4" style={{ background: c.bgPage, border: `1px solid ${c.border}` }}><div className="flex justify-between text-sm"><span>{item.label}</span>{item.percent > 0 && <b>{item.percent.toFixed(1)}%</b>}</div>{item.percent > 0 && <div className="h-2 rounded mt-3 overflow-hidden" style={{ background: c.border }}><div className="h-full" style={{ width: `${item.percent}%`, background: item.percent > 85 ? c.red : item.percent > 70 ? c.yellow : c.green }} /></div>}<p className="text-xs mt-2" style={{ color: c.textMuted }}>{item.detail}</p></div>)}</div><div className="space-y-2">{data.services.map(service => <div key={service.name} className="rounded-lg p-4 flex items-center justify-between gap-4" style={{ background: c.bgPage, border: `1px solid ${c.border}` }}><div><p className="text-sm font-semibold" style={{ color: c.textPrimary }}>{service.label}</p><p className="text-xs" style={{ color: service.status === 'active' ? c.green : c.red }}>{service.status}</p></div>{service.canRestart && <button disabled={loading} onClick={() => restart(service.name, service.label)} className="btn-secondary text-sm">Reiniciar</button>}</div>)}</div></>}</div>;
+}
+
 
 function ClockTab({ c }: { c: any }) {
   const [tz, setTz] = useState(getTimezone());
@@ -992,7 +1009,7 @@ function EventFiltersTab({ c }: { c: any }) {
 
 
 export default function SystemSettingsPage() {
-  const [tab, setTab] = useState<'operators' | 'smtp' | 'telegram' | 'notifications' | 'monitoring' | 'syslog' | 'clock' | 'backup' | 'eventfilters' | 'logo'>('operators');
+  const [tab, setTab] = useState<'operators' | 'smtp' | 'telegram' | 'notifications' | 'monitoring' | 'syslog' | 'services' | 'clock' | 'backup' | 'eventfilters' | 'logo'>('operators');
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const { c } = useTheme();
 
@@ -1013,6 +1030,7 @@ export default function SystemSettingsPage() {
     { id: 'notifications' as const, label: 'Notificaciones', icon: Bell },
     { id: 'monitoring' as const, label: 'Monitoreo', icon: Activity },
     { id: 'syslog' as const, label: 'Syslog', icon: Radio },
+    { id: 'services' as const, label: 'Servicios', icon: Activity },
     { id: 'clock' as const, label: 'Reloj', icon: Clock },
     { id: 'backup' as const, label: 'Backup', icon: Download },
     { id: 'eventfilters' as const, label: 'Eventos', icon: Filter },
@@ -1040,6 +1058,7 @@ export default function SystemSettingsPage() {
         {tab === 'notifications' && settings && <ErrorBoundary key="notifications"><NotificationsTab settings={settings} onSave={handleSave} c={c} /></ErrorBoundary>}
         {tab === 'monitoring' && settings && <ErrorBoundary key="monitoring"><MonitoringTab settings={settings} onSave={handleSave} c={c} /></ErrorBoundary>}
         {tab === 'syslog' && settings && <ErrorBoundary key="syslog"><SyslogTab settings={settings} onSave={handleSave} c={c} /></ErrorBoundary>}
+        {tab === 'services' && <ErrorBoundary key="services"><ServicesTab c={c} /></ErrorBoundary>}
         {tab === 'clock' && <ErrorBoundary key="clock"><ClockTab c={c} /></ErrorBoundary>}
         {tab === 'backup' && <ErrorBoundary key="backup"><BackupTab c={c} /></ErrorBoundary>}
         {tab === 'eventfilters' && <ErrorBoundary key="eventfilters"><EventFiltersTab c={c} /></ErrorBoundary>}

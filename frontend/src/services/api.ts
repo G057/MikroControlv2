@@ -365,7 +365,11 @@ export const settingsAPI = {
   telegramFilters: () => request<{ filters: EventFilterRule[] }>('/settings/telegram-filters'),
   updateTelegramFilters: (filters: EventFilterRule[]) =>
     request<{ filters: EventFilterRule[] }>('/settings/telegram-filters', { method: 'PUT', body: JSON.stringify({ filters }) }),
+  services: () => request<SystemServices>('/settings/services'),
+  restartService: (name: string) => request<{ detail: string }>(`/settings/services/${name}/restart`, { method: 'POST' }),
 };
+
+export interface SystemServices { services: { name: string; label: string; status: string; canRestart: boolean }[]; resources: { load: number[]; cpuCount: number; memory: { total: number; available: number; used: number; percent: number }; disk: { total: number; used: number; free: number; percent: number }; database: { size: number; connections: number }; backupsSize: number; uptimeSeconds: number }; }
 
 export interface EventFilterRule {
   id: string;
