@@ -84,6 +84,7 @@ DEFAULTS = {
     "health_successes_to_online": "2",
     "popup_exclusion_filters": "",
     "telegram_exclusion_filters": "",
+    "event_classification_rules": "[]",
 }
 
 # Claves cuyo valor es un secreto: se cifran en reposo y se enmascaran al leer.
@@ -188,6 +189,7 @@ class SettingsUpdate(BaseModel):
     health_successes_to_online: Optional[str] = None
     popup_exclusion_filters: Optional[str] = None
     telegram_exclusion_filters: Optional[str] = None
+    event_classification_rules: Optional[str] = None
 
 
 class UserCreate(BaseModel):
@@ -607,6 +609,44 @@ def update_telegram_filters(
     current_user: User = Depends(require_permission("settings:edit")),
 ):
     return _save_filter_setting(db, "telegram_exclusion_filters", data, current_user, req)
+
+
+@router.get("/event-classification-rules")
+def get_event_classification_rules(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("settings:edit")),
+):
+    from app.core.event_filter import load_json_setting
+    return {"rules": load_json_setting(db, "event_classification_rules")}
+
+
+@router.put("/event-classification-rules")
+def update_event_classification_rules(
+    data: dict,
+    req: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("settings:edit")),
+):
+    rules = data.get("rules", [])
+    if not isinstance(rules, list):
+        raise HTTPException(status_code=400, detail="rules debe ser una lista")
+    clean = []
+    for rule in rules[:100]:
+        if not isinstance(rule, dict):
+            continue
+        pattern = str(rule.get("pattern", "")).strip()
+        event_type = str(rule.get("event_type", "")).strip().lower().replace(" ", "_")
+        if not pattern or not event_type:
+            continue
+        clean.append({"id": str(rule.get("id", "")), "name": str(rule.get("name", ""))[:80],
+                      "pattern": pattern[:300], "field": rule.get("field") if rule.get("field") in ("message", "topics", "any") else "message",
+                      "mode": rule.get("mode") if rule.get("mode") in ("contains", "wildcard") else "contains",
+                      "event_type": event_type[:80], "severity": rule.get("severity") if rule.get("severity") in ("critical", "warning", "info") else "warning",
+                      "enabled": bool(rule.get("enabled", True))})
+    _set(db, "event_classification_rules", json.dumps(clean))
+    log_audit(db, current_user.username, "update", "settings", details={"event_classification_rules": len(clean)}, user_id=current_user.id, ip_address=req.client.host if req.client else None)
+    db.commit()
+    return {"rules": clean}
 
 
 @router.get("/users")

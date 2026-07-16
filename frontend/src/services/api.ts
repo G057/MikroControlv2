@@ -367,6 +367,8 @@ export const settingsAPI = {
     request<{ filters: EventFilterRule[] }>('/settings/telegram-filters', { method: 'PUT', body: JSON.stringify({ filters }) }),
   services: () => request<SystemServices>('/settings/services'),
   restartService: (name: string) => request<{ detail: string }>(`/settings/services/${name}/restart`, { method: 'POST' }),
+  eventClassificationRules: () => request<{ rules: EventClassificationRule[] }>('/settings/event-classification-rules'),
+  updateEventClassificationRules: (rules: EventClassificationRule[]) => request<{ rules: EventClassificationRule[] }>('/settings/event-classification-rules', { method: 'PUT', body: JSON.stringify({ rules }) }),
 };
 
 export interface SystemServices { services: { name: string; label: string; status: string; canRestart: boolean }[]; resources: { load: number[]; cpuCount: number; memory: { total: number; available: number; used: number; percent: number }; disk: { total: number; used: number; free: number; percent: number }; database: { size: number; connections: number }; backupsSize: number; uptimeSeconds: number }; }
@@ -380,6 +382,7 @@ export interface EventFilterRule {
   enabled: boolean;
   roles?: string[];
 }
+export interface EventClassificationRule { id: string; name: string; pattern: string; field: 'message' | 'topics' | 'any'; mode: 'contains' | 'wildcard'; event_type: string; severity: 'critical' | 'warning' | 'info'; enabled: boolean; }
 
 // Audit
 export interface RouterHistoryEntry {
