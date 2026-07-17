@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     REDIS_URL: str = ""
     SECRET_KEY: str = _DEFAULT_SECRET
+    # Used only during an explicit secret-key rotation. It must be removed
+    # after every persisted secret has been re-encrypted with SECRET_KEY.
+    SECRET_KEY_PREVIOUS: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
     DEBUG: bool = False

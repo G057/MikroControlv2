@@ -15,11 +15,18 @@ _PREFIX = "enc:"
 
 
 @lru_cache
-def _fernet() -> Fernet:
-    from app.core.config import get_settings
-    secret = get_settings().SECRET_KEY.encode("utf-8")
-    key = base64.urlsafe_b64encode(hashlib.sha256(secret).digest())
+def _fernet_for(secret: str) -> Fernet:
+    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
     return Fernet(key)
+
+
+def _current_secret() -> str:
+    from app.core.config import get_settings
+    return get_settings().SECRET_KEY
+
+
+def _fernet() -> Fernet:
+    return _fernet_for(_current_secret())
 
 
 def is_encrypted(stored: str) -> bool:
@@ -41,8 +48,25 @@ def decrypt_secret(stored: str) -> str:
         return ""
     if not is_encrypted(stored):
         return stored  # legacy plaintext
-    try:
-        return _fernet().decrypt(stored[len(_PREFIX):].encode("utf-8")).decode("utf-8")
-    except (InvalidToken, ValueError) as e:
-        logger.warning("decrypt_secret: no se pudo descifrar (token inválido): %s", e)
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    secrets_to_try = [settings.SECRET_KEY]
+    if settings.SECRET_KEY_PREVIOUS and settings.SECRET_KEY_PREVIOUS != settings.SECRET_KEY:
+        secrets_to_try.append(settings.SECRET_KEY_PREVIOUS)
+    for secret in secrets_to_try:
+        try:
+            return _fernet_for(secret).decrypt(stored[len(_PREFIX):].encode("utf-8")).decode("utf-8")
+        except (InvalidToken, ValueError):
+            continue
+    logger.warning("decrypt_secret: no se pudo descifrar (token inválido)")
+    return ""
+
+
+def decrypt_secret_with_current_key(stored: str) -> str:
+    """Descifra solo con SECRET_KEY, sin el fallback de una rotación activa."""
+    if not stored:
         return ""
+    if not is_encrypted(stored):
+        return stored
+    return _fernet().decrypt(stored[len(_PREFIX):].encode("utf-8")).decode("utf-8")
