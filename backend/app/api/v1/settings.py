@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 from app.core.database import get_db, engine, Base, SessionLocal, settings as db_settings
 from app.core.datetime_utils import utc_iso
