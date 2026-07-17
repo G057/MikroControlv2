@@ -12,7 +12,7 @@ class Role(Base):
     is_system = Column(Boolean, default=False)
     permissions = Column(Text, default="[]")  # JSON array de claves de permiso
     event_categories = Column(Text, default="[]")  # JSON array de categorías de eventos visibles
-    event_filters = Column(Text, default="[]")  # Columna legacy retenida para compatibilidad de esquema.
+    event_filters = Column(Text, nullable=False, default="[]")  # Columna legacy retenida para compatibilidad de esquema.
     router_scope = Column(String(10), default="all")  # "all" | "selected"
     router_ids = Column(Text, default="[]")  # JSON array de ids de routers visibles (scope=selected)
     router_group_ids = Column(Text, default="[]")  # JSON array de ids de grupos visibles (scope=selected)
