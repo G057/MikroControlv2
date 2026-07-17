@@ -18,6 +18,13 @@ class EventPipelineTests(unittest.TestCase):
         _, key = event.normalized()
         self.assertEqual(key, "2:dhcp_rogue")
 
+    def test_router_recovery_uses_a_distinct_deduplication_key(self):
+        offline = NormalizedEvent(4, "Antares", "health_check", "health,critical", "Antares se desconectó",
+                                  "critical", "router_offline", correlation_id="4:router_offline")
+        online = NormalizedEvent(4, "Antares", "health_check", "health,recovery", "Antares se reconectó",
+                                 "recovery", "router_online", correlation_id="4:router_online")
+        self.assertNotEqual(offline.normalized()[1], online.normalized()[1])
+
 
 if __name__ == "__main__":
     unittest.main()

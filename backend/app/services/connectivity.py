@@ -21,7 +21,6 @@ def apply_probe_result(db, router, ok: bool, error: str | None = None, now=None)
         state = RouterConnectivityState(router_id=router.id)
         db.add(state)
         db.flush()
-    before = state.current_state
     state.last_check_at = now
     transition = None
     if ok:
@@ -36,17 +35,18 @@ def apply_probe_result(db, router, ok: bool, error: str | None = None, now=None)
             state.last_state_change_at = now
             router.is_online = True
             router.last_seen = now
-            if before in ("OFFLINE", "RECOVERING"):
+            # An active offline alert is the durable indicator that this is a
+            # recovery. Do not rely only on the in-memory predecessor state.
+            offline = db.query(Alert).filter(Alert.router_id == router.id, Alert.alert_type == "router_offline",
+                                               Alert.is_resolved == False).first()
+            if offline:
                 transition = "online"
-                offline = db.query(Alert).filter(Alert.router_id == router.id, Alert.alert_type == "router_offline",
-                                                   Alert.is_resolved == False).first()
                 event, _, _, _ = ingest_event(db, NormalizedEvent(router.id, router.name, "health_check",
                     "health,recovery", f"{router.name} se reconectó", "recovery", "router_online",
-                    event_timestamp=now, correlation_id=f"{router.id}:router_offline"), create_alert=False)
-                if offline:
-                    offline.is_resolved = True
-                    offline.resolved_at = now
-                    offline.resolution_event_id = event.id
+                    event_timestamp=now, correlation_id=f"{router.id}:router_online"), create_alert=False)
+                offline.is_resolved = True
+                offline.resolved_at = now
+                offline.resolution_event_id = event.id
         return transition
 
     state.consecutive_successes = 0
