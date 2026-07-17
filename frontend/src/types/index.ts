@@ -5,6 +5,7 @@ export interface User {
   full_name: string;
   role: string;
   is_active: boolean;
+  session_timeout_minutes: number | null;
   permissions: string[];
   created_at: string | null;
   last_login: string | null;

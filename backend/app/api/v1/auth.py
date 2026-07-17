@@ -2,7 +2,7 @@ import threading
 import time
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from app.core.database import get_db
 from app.core.security import verify_password, create_access_token, get_current_user, get_user_permissions
 from app.models.user import User
@@ -82,7 +82,12 @@ def login(request: LoginRequest, req: Request, db: Session = Depends(get_db)):
     db.commit()
 
     perms = get_user_permissions(user)
-    access_token = create_access_token(data={"sub": str(user.id), "role": user.role, "perms": perms, "tv": user.token_version or 0})
+    timeout = user.session_timeout_minutes
+    access_token = create_access_token(
+        data={"sub": str(user.id), "role": user.role, "perms": perms, "tv": user.token_version or 0},
+        expires_delta=timedelta(minutes=timeout) if timeout and timeout > 0 else None,
+        never_expires=timeout == 0,
+    )
     user_data = UserResponse.model_validate(user).model_dump()
     user_data["permissions"] = perms
     return TokenResponse(

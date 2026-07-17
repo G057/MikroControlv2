@@ -88,6 +88,7 @@ function UserForm({ user, onClose, onSaved, c }: { user: User | null; onClose: (
   const [form, setForm] = useState({
     username: user?.username || '', email: user?.email || '', full_name: user?.full_name || '',
     password: '', role: user?.role || 'tecnico_n1', is_active: user?.is_active ?? true,
+    session_timeout_minutes: user?.session_timeout_minutes ?? null,
   });
 
   useEffect(() => {
@@ -129,6 +130,17 @@ function UserForm({ user, onClose, onSaved, c }: { user: User | null; onClose: (
           <div className="flex items-center gap-2">
             <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} className="rounded" />
             <label className="text-sm" style={{ color: c.textSecondary }}>Activo</label>
+          </div>
+          <div className="space-y-2">
+            <label className="block text-sm" style={{ color: c.textSecondary }}>Duración de sesión (minutos)</label>
+            <input className="input" type="number" min="1" placeholder="Predeterminada del sistema" disabled={form.session_timeout_minutes === 0}
+              value={form.session_timeout_minutes ?? ''}
+              onChange={(e) => setForm({ ...form, session_timeout_minutes: e.target.value ? Number(e.target.value) : null })} />
+            <label className="flex items-center gap-2 text-sm" style={{ color: c.textSecondary }}>
+              <input type="checkbox" checked={form.session_timeout_minutes === 0}
+                onChange={(e) => setForm({ ...form, session_timeout_minutes: e.target.checked ? 0 : null })} className="rounded" />
+              Sin vencimiento (pantalla de monitoreo 24/7)
+            </label>
           </div>
           <div className="flex gap-3 pt-2">
             <button type="submit" className="btn-primary flex-1">{user ? 'Guardar' : 'Crear'}</button>

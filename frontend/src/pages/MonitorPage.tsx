@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { monitorAPI } from '../services/api';
+import { formatDateTime } from '../utils/date';
 import type { MonitorRouter } from '../types';
 import type { MonitorNotification } from '../services/api';
 import {
@@ -466,7 +467,7 @@ export default function MonitorPage() {
                   </button>
                 )}
               </div>
-              <p className="text-[11px] mb-1 font-mono" style={{ color: c.textMuted }}>{p.createdAt ? new Date(p.createdAt).toLocaleString() : ''}</p>
+              <p className="text-[11px] mb-1 font-mono" style={{ color: c.textMuted }}>{formatDateTime(p.createdAt)}</p>
               <p className="text-sm" style={{ color: c.textSecondary }}>
                 {p.message}{p.occurrenceCount > 1 ? ` (${p.occurrenceCount} ocurrencias)` : ''}
               </p>

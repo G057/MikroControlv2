@@ -23,6 +23,8 @@ class User(Base):
     role = Column(String(20), default=UserRole.tecnico_n1.value, nullable=False)
     is_active = Column(Boolean, default=True)
     token_version = Column(Integer, default=0, nullable=False)
+    # None uses the global timeout; 0 means the token has no expiration claim.
+    session_timeout_minutes = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     last_login = Column(DateTime(timezone=True), nullable=True)

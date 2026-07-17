@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_serializer
+from pydantic import BaseModel, EmailStr, Field, field_serializer
 from typing import Optional
 from datetime import datetime
 from app.core.datetime_utils import utc_iso
@@ -11,6 +11,7 @@ class UserCreate(BaseModel):
     password: str
     role: str = "tecnico_n1"
     is_active: bool = True
+    session_timeout_minutes: Optional[int] = Field(default=None, ge=0)
 
 
 class UserUpdate(BaseModel):
@@ -20,6 +21,7 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
     role: Optional[str] = None
     is_active: Optional[bool] = None
+    session_timeout_minutes: Optional[int] = Field(default=None, ge=0)
 
 
 class UserResponse(BaseModel):
@@ -29,6 +31,7 @@ class UserResponse(BaseModel):
     full_name: str
     role: str
     is_active: bool
+    session_timeout_minutes: Optional[int] = None
     permissions: list = []
     created_at: Optional[datetime] = None
     last_login: Optional[datetime] = None
