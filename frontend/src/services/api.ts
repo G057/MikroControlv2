@@ -351,12 +351,6 @@ export const settingsAPI = {
       })
       .catch(err => console.error('Error descargando backup de settings:', err));
   },
-  listOperators: () => request<OperatorUser[]>('/settings/users'),
-  createOperator: (data: { username: string; email: string; full_name: string; password: string; role: string }) =>
-    request<OperatorUser>('/settings/users', { method: 'POST', body: JSON.stringify(data) }),
-  updateOperator: (id: number, data: { email?: string; full_name?: string; password?: string; role?: string; is_active?: boolean }) =>
-    request<OperatorUser>(`/settings/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteOperator: (id: number) => request(`/settings/users/${id}`, { method: 'DELETE' }),
   eventFilters: () => request<{ filters: EventFilterRule[] }>('/settings/event-filters'),
   updateEventFilters: (filters: EventFilterRule[]) =>
     request<{ filters: EventFilterRule[] }>('/settings/event-filters', { method: 'PUT', body: JSON.stringify({ filters }) }),

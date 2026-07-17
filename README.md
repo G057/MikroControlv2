@@ -32,9 +32,9 @@ docker compose logs -f backend
 
 - **URL:** http://localhost
 - **Usuario:** admin
-- **Contraseña:** admin123
+- **Contraseña:** se genera aleatoriamente en el primer inicio, salvo que se defina `MK_ADMIN_PASSWORD`.
 
-**Cambiar la contraseña del admin inmediatamente después del primer login.**
+Guardá la contraseña inicial y cambiala inmediatamente después del primer login.
 
 ## Arquitectura
 
@@ -74,7 +74,7 @@ MikroControl/
 | API MikroTik | RouterOS API (socket directo) |
 | Tiempo real | WebSocket |
 | Auth | JWT (Bearer token) |
-| Despliegue | Docker Compose |
+| Despliegue | Docker Compose / systemd + Nginx |
 
 ## Roles de Usuario
 
@@ -174,7 +174,7 @@ npm run dev
 ## Seguridad
 
 - Cambiar SECRET_KEY y DB_PASSWORD en .env
-- Usar HTTPS en producción (configurar nginx/ssl)
+- La configuración Docker incluida es para red interna y expone solamente Nginx en HTTP. Para publicar fuera de la LAN, terminá TLS en un proxy externo y restringí `CORS_ORIGINS` a los orígenes HTTPS autorizados.
 - Crear usuarios con roles apropiados
 - Revisar auditoría periódicamente
 - Backups off-site recomendados

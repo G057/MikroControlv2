@@ -12,6 +12,7 @@ class Role(Base):
     is_system = Column(Boolean, default=False)
     permissions = Column(Text, default="[]")  # JSON array de claves de permiso
     event_categories = Column(Text, default="[]")  # JSON array de categorías de eventos visibles
+    event_filters = Column(Text, default="[]")  # Columna legacy retenida para compatibilidad de esquema.
     router_scope = Column(String(10), default="all")  # "all" | "selected"
     router_ids = Column(Text, default="[]")  # JSON array de ids de routers visibles (scope=selected)
     router_group_ids = Column(Text, default="[]")  # JSON array de ids de grupos visibles (scope=selected)
@@ -42,10 +43,12 @@ class Role(Base):
         self.event_categories = json.dumps(list(cats))
 
     def get_router_scope(self) -> str:
-        return (self.router_scope or "all")
+        return self.router_scope if self.router_scope in ("all", "selected") else "selected"
 
     def set_router_scope(self, scope: str):
-        self.router_scope = scope if scope in ("all", "selected") else "all"
+        if scope not in ("all", "selected"):
+            raise ValueError("router_scope debe ser 'all' o 'selected'")
+        self.router_scope = scope
 
     def get_router_ids(self) -> list:
         import json

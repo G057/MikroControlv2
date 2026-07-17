@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { settingsAPI, rolesAPI, eventsAPI, logoAPI, systemBackupAPI, type SystemSettings, type OperatorUser, type EventFilterRule, type SystemBackupItem, type SystemServices } from '../services/api';
+import { settingsAPI, rolesAPI, eventsAPI, logoAPI, systemBackupAPI, type SystemSettings, type EventFilterRule, type SystemBackupItem, type SystemServices } from '../services/api';
 import { useTheme } from '../contexts/ThemeContext';
 import EventFilterRulesEditor from '../components/EventFilterRulesEditor';
 import EventClassificationPage from './EventClassificationPage';
 import ErrorBoundary from '../components/ErrorBoundary';
 import {
-  Settings, Users, Mail, MessageCircle, Bell, Download, Plus, Trash2,
+  Settings, Mail, MessageCircle, Bell, Download, Plus, Trash2,
   Save, Send, CheckCircle, XCircle, Eye, EyeOff, Shield, Clock, Activity, Filter, Image, RotateCcw, RefreshCw, Radio, Wrench, Layers, HardDrive,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -16,129 +16,6 @@ function Toggle({ value, onChange, c }: { value: boolean; onChange: (v: boolean)
     <button onClick={() => onChange(!value)} className="relative w-10 h-5 rounded-full transition-colors" style={{ background: value ? c.green : c.border }}>
       <span className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-transform bg-white" style={{ transform: value ? 'translateX(20px)' : 'translateX(0)' }} />
     </button>
-  );
-}
-
-function OperatorsTab({ c }: { c: any }) {
-  const [users, setUsers] = useState<OperatorUser[]>([]);
-  const [roles, setRoles] = useState<{ name: string; is_system: boolean }[]>([]);
-  const [showForm, setShowForm] = useState(false);
-  const [editUser, setEditUser] = useState<OperatorUser | null>(null);
-  const [form, setForm] = useState({ username: '', email: '', full_name: '', password: '', role: 'tecnico_n1' });
-
-  const load = () => {
-    settingsAPI.listOperators().then(setUsers).catch(console.error);
-    rolesAPI.list().then(r => {
-      setRoles(r);
-      if (!form.role || !r.find(x => x.name === form.role)) {
-        const first = r.find(x => !x.is_system);
-        setForm(f => ({ ...f, role: first ? first.name : 'tecnico_n1' }));
-      }
-    }).catch(console.error);
-  };
-  useEffect(() => { load(); }, []);
-
-  const handleSubmit = async () => {
-    try {
-      if (editUser) {
-        const data: Record<string, any> = { email: form.email, full_name: form.full_name, role: form.role };
-        if (form.password) data.password = form.password;
-        await settingsAPI.updateOperator(editUser.id, data);
-        toast.success('Usuario actualizado');
-      } else {
-        await settingsAPI.createOperator(form);
-        toast.success('Usuario creado');
-      }
-      setShowForm(false); setEditUser(null);
-      load();
-    } catch (e: any) { toast.error(e.message); }
-  };
-
-  const handleDelete = async (id: number, name: string) => {
-    if (!confirm(`Eliminar usuario "${name}"?`)) return;
-    try { await settingsAPI.deleteOperator(id); toast.success('Eliminado'); load(); }
-    catch (e: any) { toast.error(e.message); }
-  };
-
-  const handleToggleActive = async (u: OperatorUser) => {
-    try { await settingsAPI.updateOperator(u.id, { is_active: !u.is_active }); load(); }
-    catch (e: any) { toast.error(e.message); }
-  };
-
-  const roleLabel = (rn: string) => roles.find(r => r.name === rn)?.name || rn;
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm" style={{ color: c.textSecondary }}>{users.length} usuarios registrados</p>
-        <button onClick={() => { setShowForm(true); setEditUser(null); setForm({ username: '', email: '', full_name: '', password: '', role: roles.find(r => !r.is_system)?.name || 'tecnico_n1' }); }} className="btn-primary text-sm">
-          <Plus className="w-4 h-4 inline mr-1" />Nuevo usuario
-        </button>
-      </div>
-
-      {showForm && (
-        <div className="card !p-4 space-y-3">
-          <h3 className="text-sm font-semibold" style={{ color: c.textPrimary }}>{editUser ? 'Editar usuario' : 'Nuevo usuario'}</h3>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[10px] uppercase font-medium block mb-1" style={{ color: c.textMuted }}>Username</label>
-              <input className="input w-full text-sm" value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} disabled={!!editUser} />
-            </div>
-            <div>
-              <label className="text-[10px] uppercase font-medium block mb-1" style={{ color: c.textMuted }}>Email</label>
-              <input className="input w-full text-sm" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
-            </div>
-            <div>
-              <label className="text-[10px] uppercase font-medium block mb-1" style={{ color: c.textMuted }}>Nombre completo</label>
-              <input className="input w-full text-sm" value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} />
-            </div>
-            <div>
-              <label className="text-[10px] uppercase font-medium block mb-1" style={{ color: c.textMuted }}>{editUser ? 'Nueva contraseña (vacío = no cambiar)' : 'Contraseña'}</label>
-              <input className="input w-full text-sm" type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
-            </div>
-            <div>
-              <label className="text-[10px] uppercase font-medium block mb-1" style={{ color: c.textMuted }}>Rol</label>
-              <select className="input w-full text-sm" value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
-                {roles.map(r => <option key={r.name} value={r.name}>{r.name}{r.is_system ? ' (sistema)' : ''}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={handleSubmit} className="btn-primary text-sm"><Save className="w-4 h-4 inline mr-1" />Guardar</button>
-            <button onClick={() => { setShowForm(false); setEditUser(null); }} className="btn-secondary text-sm">Cancelar</button>
-          </div>
-        </div>
-      )}
-
-      <div className="space-y-2">
-        {users.map(u => (
-          <div key={u.id} className="card !p-3 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: u.is_active ? `${c.green}20` : `${c.red}20` }}>
-              <Shield className="w-4 h-4" style={{ color: u.is_active ? c.green : c.red }} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium" style={{ color: c.textPrimary }}>{u.full_name || u.username}</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: c.bgHover, color: c.textMuted }}>@{u.username}</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded font-medium capitalize" style={{ background: `${c.accent}20`, color: c.accent }}>
-                  {roleLabel(u.role)}
-                </span>
-              </div>
-              <p className="text-[11px]" style={{ color: c.textMuted }}>{u.email} {u.last_login ? `· Último login: ${formatDateTime(u.last_login)}` : ''}</p>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Toggle value={u.is_active} onChange={() => handleToggleActive(u)} c={c} />
-              <button onClick={() => { setEditUser(u); setForm({ username: u.username, email: u.email, full_name: u.full_name, password: '', role: u.role }); setShowForm(true); }} className="p-1.5 rounded hover:opacity-80" style={{ color: c.textMuted }}>
-                <Settings className="w-4 h-4" />
-              </button>
-              <button onClick={() => handleDelete(u.id, u.username)} className="p-1.5 rounded hover:opacity-80" style={{ color: c.red }}>
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -1047,7 +924,7 @@ function RetentionTab({ settings, onSave, c }: { settings: SystemSettings; onSav
 
 
 export default function SystemSettingsPage() {
-  const [tab, setTab] = useState<'operators' | 'smtp' | 'telegram' | 'notifications' | 'monitoring' | 'syslog' | 'services' | 'retention' | 'clock' | 'backup' | 'filters' | 'classification' | 'gallery' | 'logo'>('operators');
+  const [tab, setTab] = useState<'smtp' | 'telegram' | 'notifications' | 'monitoring' | 'syslog' | 'services' | 'retention' | 'clock' | 'backup' | 'filters' | 'classification' | 'gallery' | 'logo'>('smtp');
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const { c } = useTheme();
 
@@ -1062,7 +939,6 @@ export default function SystemSettingsPage() {
   };
 
   const tabs = [
-    { id: 'operators' as const, label: 'Operadores', icon: Users },
     { id: 'smtp' as const, label: 'SMTP / Email', icon: Mail },
     { id: 'telegram' as const, label: 'Telegram', icon: MessageCircle },
     { id: 'notifications' as const, label: 'Notificaciones', icon: Bell },
@@ -1093,7 +969,6 @@ export default function SystemSettingsPage() {
       </div>
 
       <div className="card !p-5">
-        {tab === 'operators' && <ErrorBoundary key="operators"><OperatorsTab c={c} /></ErrorBoundary>}
         {tab === 'smtp' && settings && <ErrorBoundary key="smtp"><SMTPTab settings={settings} onSave={handleSave} c={c} /></ErrorBoundary>}
         {tab === 'telegram' && settings && <ErrorBoundary key="telegram"><TelegramTab settings={settings} onSave={handleSave} c={c} /></ErrorBoundary>}
         {tab === 'notifications' && settings && <ErrorBoundary key="notifications"><NotificationsTab settings={settings} onSave={handleSave} c={c} /></ErrorBoundary>}

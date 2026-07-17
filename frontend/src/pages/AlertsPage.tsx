@@ -3,6 +3,7 @@ import { eventsAPI, alertsAPI, type RouterEvent } from '../services/api';
 import type { RouterDevice } from '../types';
 import { routersAPI } from '../services/api';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/AuthContext';
 import { CheckCircle, AlertTriangle, AlertCircle, RefreshCw, ChevronDown, Info, Search, Server, X, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatDateTime, formatTime } from '../utils/date';
@@ -64,6 +65,7 @@ export default function EventsPage() {
   const [counts, setCounts] = useState({ critical: 0, warning: 0, info: 0, unresolved: 0 });
   const [resolveModal, setResolveModal] = useState<{ visible: boolean; eventId: string; title: string }>({ visible: false, eventId: '', title: '' });
   const { c } = useTheme();
+  const { hasPermission } = useAuth();
 
   const loadCounts = async () => {
     try {
@@ -133,9 +135,11 @@ export default function EventsPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold" style={{ color: c.textPrimary }}>Eventos</h1>
-        <button onClick={handleRefresh} disabled={loading} className="btn-secondary text-sm">
-          <RefreshCw className={`w-4 h-4 inline mr-1 ${loading ? 'animate-spin' : ''}`} />Actualizar logs
-        </button>
+        {hasPermission('settings:edit') && (
+          <button onClick={handleRefresh} disabled={loading} className="btn-secondary text-sm">
+            <RefreshCw className={`w-4 h-4 inline mr-1 ${loading ? 'animate-spin' : ''}`} />Actualizar logs
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-4 gap-3">

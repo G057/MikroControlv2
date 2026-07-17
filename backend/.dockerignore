@@ -1,0 +1,7 @@
+.env
+*.pyc
+__pycache__/
+backups/
+secret.key
+tests/
+alembic/versions/__pycache__/

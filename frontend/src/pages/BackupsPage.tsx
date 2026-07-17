@@ -20,6 +20,7 @@ export default function BackupsPage() {
   const [filterRouter, setFilterRouter] = useState<number | ''>('');
   const { hasPermission } = useAuth();
   const { c } = useTheme();
+  const canEditSettings = hasPermission('settings:edit');
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [cfg, setCfg] = useState({
@@ -33,6 +34,7 @@ export default function BackupsPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    if (!canEditSettings) return;
     settingsAPI.get().then(s => setCfg({
       router_backup_interval_hours: s.router_backup_interval_hours || '6',
       router_backup_schedule_days: s.router_backup_schedule_days || '',
@@ -41,7 +43,7 @@ export default function BackupsPage() {
       router_backup_retention_days: s.router_backup_retention_days || '30',
       router_backup_retention_count: s.router_backup_retention_count || '60',
     })).catch(() => {});
-  }, []);
+  }, [canEditSettings]);
 
   const load = () => {
     backupsAPI.list(filterRouter || undefined).then(setBackups).catch(console.error);
@@ -85,7 +87,7 @@ export default function BackupsPage() {
       </div>
 
       {/* Configuración de respaldo automático */}
-      {hasPermission("routers:backup") && (
+      {canEditSettings && (
         <div className="rounded-xl" style={{ background: c.bgCard, border: `1px solid ${c.borderLight}` }}>
           <button
             onClick={() => setSettingsOpen(!settingsOpen)}

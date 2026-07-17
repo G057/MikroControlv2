@@ -1,23 +1,14 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { monitorAPI } from '../services/api';
 import type { MonitorRouter } from '../types';
 import type { MonitorNotification } from '../services/api';
 import {
-  Radio,
-  LayoutDashboard,
-  Server,
-  Bell,
-  Settings,
   Search,
   X,
   Grid3X3,
   List,
-  Sun,
-  Moon,
-  LogOut,
   Wifi,
   WifiOff,
   AlertTriangle,
@@ -41,18 +32,9 @@ function timeAgo(iso: string | null): string {
   return `Hace ${days}d`;
 }
 
-const SIDEBAR_ITEMS = [
-  { icon: LayoutDashboard, path: '/', label: 'Dashboard' },
-  { icon: Server, path: '/routers', label: 'Routers' },
-  { icon: Radio, path: '/monitor', label: 'Monitor', current: true },
-  { icon: Bell, path: '/events', label: 'Alertas' },
-  { icon: Settings, path: '/settings', label: 'Configuración' },
-];
-
 export default function MonitorPage() {
-  const { c, isDark, toggle: toggleTheme } = useTheme();
-  const { user, logout, hasPermission } = useAuth();
-  const navigate = useNavigate();
+  const { c } = useTheme();
+  const { hasPermission } = useAuth();
 
   const [routers, setRouters] = useState<MonitorRouter[]>([]);
   const [search, setSearch] = useState('');
@@ -219,11 +201,6 @@ export default function MonitorPage() {
     activeAlerts: routers.reduce((s, r) => s + r.alert_count, 0),
   }), [routers]);
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
-
   const toggleSelect = (id: number) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -234,50 +211,14 @@ export default function MonitorPage() {
   };
 
   return (
-    <div className="h-screen flex overflow-hidden" style={{ background: c.bgPage, color: c.textPrimary }}>
-      {/* Thin sidebar */}
-      <aside
-        className="flex flex-col items-center py-4 gap-1 flex-shrink-0 z-10"
-        style={{ width: 72, background: c.bgSidebar, borderRight: `1px solid ${c.border}` }}
-      >
-        <div className="mb-4 p-2 rounded-xl" style={{ background: c.accent }}>
-          <Radio className="w-6 h-6 text-white" />
-        </div>
-        {SIDEBAR_ITEMS.map(item => {
-          const isCurrent = item.path === '/monitor';
-          return (
-            <button
-              key={item.path}
-              onClick={() => navigate(item.path)}
-              title={item.label}
-              className="flex items-center justify-center w-12 h-12 rounded-xl transition-all duration-150"
-              style={{
-                background: isCurrent ? c.bgActive : 'transparent',
-                color: isCurrent ? c.accent : c.textMuted,
-              }}
-              onMouseEnter={e => { if (!isCurrent) (e.currentTarget as HTMLElement).style.background = c.bgHover; }}
-              onMouseLeave={e => { if (!isCurrent) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-            >
-              <item.icon className="w-5 h-5" />
-            </button>
-          );
-        })}
-      </aside>
-
-      {/* Main area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar */}
-        <header
-          className="flex items-center justify-between flex-shrink-0 px-6 gap-4"
-          style={{ height: 64, background: c.bgSidebar, borderBottom: `1px solid ${c.border}` }}
-        >
-          <h1 className="text-lg font-semibold" style={{ color: c.textPrimary }}>
-            <Monitor className="w-5 h-5 inline-block mr-2" style={{ color: c.accent }} />
-            Monitoreo de Routers
-          </h1>
-
-          <div className="flex items-center gap-3">
-            <div className="relative" style={{ width: 240 }}>
+    <div className="space-y-4" style={{ color: c.textPrimary }}>
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="mr-auto text-lg font-semibold" style={{ color: c.textPrimary }}>
+          <Monitor className="w-5 h-5 inline-block mr-2" style={{ color: c.accent }} />
+          Monitoreo de Routers
+        </h1>
+        <div className="flex flex-wrap items-center gap-3">
+            <div className="relative w-full sm:w-60">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: c.textMuted }} />
               <input
                 type="text"
@@ -370,26 +311,10 @@ export default function MonitorPage() {
             }} className="px-2 py-1 rounded-lg text-xs" style={{ color: popupsPaused ? c.textMuted : c.accent, border: `1px solid ${c.border}` }} title="Pausar o reanudar popups">
               {popupsPaused ? 'Reanudar' : 'Pausar'}
             </button>
-            <button onClick={toggleTheme} className="p-2 rounded-lg transition-colors" style={{ color: c.textMuted }} title={isDark ? 'Modo día' : 'Modo noche'}>
-              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
+        </div>
+      </div>
 
-            <div className="flex items-center gap-2 pl-3" style={{ borderLeft: `1px solid ${c.border}` }}>
-              <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold" style={{ background: c.accent, color: '#fff' }}>
-                {(user?.full_name || user?.username || '?').charAt(0).toUpperCase()}
-              </div>
-              <span className="text-sm font-medium max-w-[120px] truncate" style={{ color: c.textPrimary }}>
-                {user?.full_name || user?.username}
-              </span>
-              <button onClick={handleLogout} className="p-1.5 rounded-lg transition-colors" style={{ color: c.textMuted }} title="Cerrar sesión">
-                <LogOut className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </header>
-
-        {/* Summary cards */}
-        <div className="flex-shrink-0 px-6 pt-4 pb-2">
+        <div>
           <div className="grid grid-cols-5 gap-4">
             {[
               { label: 'Total', value: summary.total, color: c.textPrimary },
@@ -414,8 +339,7 @@ export default function MonitorPage() {
           </div>
         </div>
 
-        {/* Main grid / list */}
-        <div className="flex-1 px-6 pb-6 pt-3 overflow-y-auto">
+        <div>
           {filteredRouters.length === 0 ? (
             <div className="flex items-center justify-center h-full text-sm" style={{ color: c.textMuted }}>
               {routers.length === 0 ? 'Cargando routers...' : 'No se encontraron routers con los filtros actuales'}
@@ -527,7 +451,6 @@ export default function MonitorPage() {
             </div>
           )}
         </div>
-      </div>
 
       {!popupsPaused && alertPopups.length > 0 && (
         <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-h-[80vh] overflow-y-auto" style={{ maxWidth: 384, scrollbarWidth: 'thin' }}>

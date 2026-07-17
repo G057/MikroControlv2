@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Literal, Optional
 from app.core.database import get_db
 from app.core.security import require_permission, get_user_permissions
 from app.models.user import User
@@ -30,7 +30,7 @@ class RoleCreate(BaseModel):
     description: Optional[str] = ""
     permissions: List[str] = []
     event_categories: List[str] = []
-    router_scope: str = "all"
+    router_scope: Literal["all", "selected"] = "all"
     router_ids: List[int] = []
     router_group_ids: List[int] = []
 
@@ -39,7 +39,7 @@ class RoleUpdate(BaseModel):
     description: Optional[str] = None
     permissions: Optional[List[str]] = None
     event_categories: Optional[List[str]] = None
-    router_scope: Optional[str] = None
+    router_scope: Optional[Literal["all", "selected"]] = None
     router_ids: Optional[List[int]] = None
     router_group_ids: Optional[List[int]] = None
 

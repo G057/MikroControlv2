@@ -7,7 +7,7 @@ _DEFAULT_SECRET = "change-this-to-a-random-secret-key-at-least-32-chars"
 
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "postgresql://mikrocontrol:mikrocontrol_secret_2026@localhost:5432/mikrocontrol"
+    DATABASE_URL: str
     REDIS_URL: str = ""
     SECRET_KEY: str = _DEFAULT_SECRET
     ALGORITHM: str = "HS256"
@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     # Orígenes permitidos para CORS (separados por coma). Por defecto solo el
     # frontend local. Configurable con la variable de entorno CORS_ORIGINS.
-    CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173"
+    CORS_ORIGINS: str = ""
 
     @property
     def cors_origins_list(self) -> list[str]:
@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     ROUTEROS_DEFAULT_USERNAME: str = "admin"
     ROUTEROS_API_PORT: int = 8728
     ROUTEROS_API_SSL_PORT: int = 8729
+    ROUTEROS_TLS_VERIFY: bool = True
 
     class Config:
         env_file = ".env"

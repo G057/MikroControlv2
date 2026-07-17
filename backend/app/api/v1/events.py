@@ -64,7 +64,7 @@ def list_events(
     source: Optional[str] = None,
     limit: int = Query(default=200, le=1000),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("events:view")),
 ):
     try:
         return _list_events(severity, topic, router_id, search, is_resolved, source, limit, db, current_user)
@@ -185,7 +185,7 @@ def events_count(
     severity: Optional[str] = None,
     router_id: Optional[int] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("events:view")),
 ):
     allowed_cats = event_filter.load_role_event_categories(current_user.role, db)
     is_admin = (current_user.role == "admin")
@@ -302,7 +302,7 @@ def counts_by_severity(
             if is_resolved is not None:
                 aq = aq.filter(Alert.is_resolved == is_resolved)
             if visible_ids is not None:
-                aq = aq.filter(Alert.router_id.in_(visible_ids))
+                aq = aq.filter((Alert.router_id.is_(None)) | (Alert.router_id.in_(visible_ids)))
             for sev, cnt in aq.group_by(Alert.severity).all():
                 if sev in counts:
                     counts[sev] = cnt
@@ -310,7 +310,7 @@ def counts_by_severity(
             if router_id:
                 unresolved_q = unresolved_q.filter(Alert.router_id == router_id)
             if visible_ids is not None:
-                unresolved_q = unresolved_q.filter(Alert.router_id.in_(visible_ids))
+                unresolved_q = unresolved_q.filter((Alert.router_id.is_(None)) | (Alert.router_id.in_(visible_ids)))
             counts["unresolved"] = unresolved_q.scalar() or 0
         else:
             aq = db.query(Alert)
@@ -449,7 +449,7 @@ def event_report(
 
 
 @router.get("/stream")
-async def event_stream(token: Optional[str] = None, current_user: User = Depends(get_current_user)):
+async def event_stream(current_user: User = Depends(require_permission("events:view"))):
     """SSE endpoint: envía notificaciones en tiempo real cuando hay
     nuevas alertas críticas o cambios de estado de routers."""
     async def generate():
@@ -457,15 +457,19 @@ async def event_stream(token: Optional[str] = None, current_user: User = Depends
         last_router_status = {}
         has_sensitive = "routers:view_sensitive" in get_user_permissions(current_user)
         while True:
+            db = None
             try:
                 from app.core.database import SessionLocal
-                from sqlalchemy import desc
                 db = SessionLocal()
                 latest = db.query(Alert).filter(
                     Alert.is_resolved == False,
                     Alert.severity == "critical",
                     Alert.id > last_alert_id,
-                ).order_by(Alert.id).all()
+                )
+                visible_ids = get_visible_router_ids(current_user, db)
+                if visible_ids is not None:
+                    latest = latest.filter((Alert.router_id.is_(None)) | (Alert.router_id.in_(visible_ids)))
+                latest = latest.order_by(Alert.id).all()
                 for a in latest:
                     data = {
                         "type": "new_alert",
@@ -480,9 +484,11 @@ async def event_stream(token: Optional[str] = None, current_user: User = Depends
                     yield f"event: alert\ndata: {json.dumps(data)}\n\n"
                     if a.id > last_alert_id:
                         last_alert_id = a.id
-                db.close()
             except Exception:
-                pass
+                logger.exception("Error al consultar alertas para SSE")
+            finally:
+                if db is not None:
+                    db.close()
             # Heartbeat cada 15s para mantener conexión
             yield f": heartbeat\n\n"
             await asyncio.sleep(3)

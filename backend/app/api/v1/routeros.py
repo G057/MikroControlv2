@@ -48,10 +48,10 @@ _SECTION_VIEW = {
 
 
 def _required_perm_for_command(command: str):
-    """Devuelve el permiso necesario para ejecutar el comando, o None si es de solo lectura.
+    """Devuelve el permiso necesario para ejecutar el comando.
 
     - Comandos de sección de configuración (add/set/enable/disable/remove) -> routers:cfg_<feature>_<op>
-    - Comandos de solo lectura (print/get) -> None (cualquier usuario autenticado que vea el router)
+    - Comandos de solo lectura (print/get) -> permiso de vista de la sección
     - Cualquier otro comando libre -> routers:terminal
     """
     if not command:
@@ -69,9 +69,18 @@ def _required_perm_for_command(command: str):
             return f"routers:cfg_{_CMD_FEATURE[base]}_edit"
         if action in ("remove", "delete"):
             return f"routers:cfg_{_CMD_FEATURE[base]}_delete"
-        # print/get y otros -> lectura
-        return None
+        if action in ("print", "get"):
+            return _SECTION_VIEW[_CMD_FEATURE[base]]
+        return "routers:terminal"
     return "routers:terminal"
+
+
+def _can_execute_command(command: str, permissions: list[str]) -> bool:
+    required = _required_perm_for_command(command)
+    if "routers:terminal" in permissions or required in permissions:
+        return True
+    feature = next((name for name, view_permission in _SECTION_VIEW.items() if view_permission == required), None)
+    return bool(feature and any(f"routers:cfg_{feature}_{op}" in permissions for op in ("create", "edit", "delete")))
 
 
 def _action_for_command(command: str) -> str:
@@ -247,10 +256,9 @@ def execute_command(
     r = require_visible_router(data.router_id, current_user, db)
 
     required = _required_perm_for_command(data.command)
-    if required:
-        perms = get_user_permissions(current_user)
-        if required not in perms and "routers:terminal" not in perms:
-            raise HTTPException(status_code=403, detail=f"Sin permiso para ejecutar este comando ({required})")
+    perms = get_user_permissions(current_user)
+    if not _can_execute_command(data.command, perms):
+        raise HTTPException(status_code=403, detail=f"Sin permiso para ejecutar este comando ({required})")
 
     from app.services.routeros_service import execute_routeros_command
     result = execute_routeros_command(r, data.command)
@@ -301,10 +309,9 @@ def execute_bulk_command(
         raise HTTPException(status_code=400, detail="El comando no puede estar vacío")
 
     required = _required_perm_for_command(data.command)
-    if required:
-        perms = get_user_permissions(current_user)
-        if required not in perms and "routers:terminal" not in perms:
-            raise HTTPException(status_code=403, detail=f"Sin permiso para ejecutar este comando ({required})")
+    perms = get_user_permissions(current_user)
+    if not _can_execute_command(data.command, perms):
+        raise HTTPException(status_code=403, detail=f"Sin permiso para ejecutar este comando ({required})")
 
     from app.core.crypto import decrypt_secret
     snapshots = []

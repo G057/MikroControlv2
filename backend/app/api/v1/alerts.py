@@ -67,7 +67,7 @@ def resolve_alert(
     alert_id: int,
     body: ResolveRequest = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("events:view")),
 ):
     from datetime import datetime, timezone
     alert = db.query(Alert).filter(Alert.id == alert_id).first()

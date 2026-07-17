@@ -41,12 +41,12 @@ sudo chown -R $USER:$USER /opt/mikrocontrol
 ```
 
 ### 3. PostgreSQL - crear base y usuario
-El `DATABASE_URL` por defecto usa usuario `mikrocontrol`, password
-`mikrocontrol_secret_2026` y base `mikrocontrol`. Si querés otra password,
-cambiala aquí y en `.env` + `deploy/mikrocontrol.service`.
+Generá una contraseña única. PostgreSQL queda accesible solamente desde el
+servidor; no publiques el puerto 5432 en el firewall.
 
 ```bash
-sudo -u postgres psql -c "CREATE USER mikrocontrol WITH PASSWORD 'mikrocontrol_secret_2026';"
+DB_PASSWORD=$(openssl rand -base64 32)
+sudo -u postgres psql -v db_password="$DB_PASSWORD" -c "CREATE USER mikrocontrol WITH PASSWORD :'db_password';"
 sudo -u postgres psql -c "CREATE DATABASE mikrocontrol OWNER mikrocontrol;"
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE mikrocontrol TO mikrocontrol;"
 ```
@@ -64,26 +64,42 @@ deactivate
 
 ### 5. Variables de entorno
 ```bash
-cd /opt/mikrocontrol
-cp .env.example .env
-# Permitir cualquier origen CORS (ajustá si querés restringir)
-echo "CORS_ORIGINS=*" >> .env
-# Clave secreta ESTABLE en backend/.env (lo lee el servicio vía EnvironmentFile).
-# Si cambia en cada reinicio, las contraseñas de routers cifradas y los tokens
-# JWT dejan de funcionar.
 SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(48))")
-printf 'SECRET_KEY=%s\n' "$SECRET_KEY" | sudo tee /opt/mikrocontrol/backend/.env >/dev/null
-sudo chmod 644 /opt/mikrocontrol/backend/.env
+REDIS_PASSWORD=$(openssl rand -base64 32)
+sudo install -o root -g www-data -m 640 /dev/null /opt/mikrocontrol/backend/.env
+sudo tee /opt/mikrocontrol/backend/.env >/dev/null <<EOF
+DATABASE_URL=postgresql://mikrocontrol:${DB_PASSWORD}@localhost:5432/mikrocontrol
+SECRET_KEY=${SECRET_KEY}
+CORS_ORIGINS=
+REDIS_URL=redis://:${REDIS_PASSWORD}@localhost:6379/0
+ROUTEROS_TLS_VERIFY=true
+EOF
 ```
+Para una instalación same-origin en la LAN, dejá `CORS_ORIGINS` vacío. Si un
+frontend separado debe acceder a la API, agregá únicamente su origen HTTPS.
 
-### 6. Frontend - build de producción
+### 6. Migraciones de base de datos
+En una instalación nueva, creá el esquema mediante Alembic antes de iniciar el
+servicio:
+```bash
+cd /opt/mikrocontrol/backend
+source venv/bin/activate
+alembic upgrade head
+deactivate
+```
+Para una base existente creada antes de Alembic: realizá y verificá un
+`pg_dump`, detené el servicio, comprobá el esquema en una copia y recién
+entonces ejecutá `alembic stamp 20260716_01`. No ejecutes `upgrade` sobre una
+base existente sin el `stamp`, porque la revisión inicial crea las tablas.
+
+### 7. Frontend - build de producción
 ```bash
 cd /opt/mikrocontrol/frontend
-npm install
+npm ci
 npm run build
 ```
 
-### 7. Configurar nginx (puerto 8094)
+### 8. Configurar nginx (puerto 8094)
 ```bash
 sudo cp /opt/mikrocontrol/deploy/nginx-mikrocontrol.conf /etc/nginx/sites-available/mikrocontrol
 sudo ln -s /etc/nginx/sites-available/mikrocontrol /etc/nginx/sites-enabled/
@@ -91,22 +107,20 @@ sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-### 8. Configurar systemd (auto-inicio del backend en puerto 8001)
-El servicio ya define `DATABASE_URL` apuntando a PostgreSQL local.
+### 9. Configurar systemd (auto-inicio del backend en puerto 8001)
 ```bash
 sudo cp /opt/mikrocontrol/deploy/mikrocontrol.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable mikrocontrol
 ```
 
-### 9. Corregir permisos (importante)
+### 10. Corregir permisos (importante)
 ```bash
-sudo chown -R www-data:www-data /opt/mikrocontrol/backend
+sudo chown -R www-data:www-data /opt/mikrocontrol/backend/backups /opt/mikrocontrol/backend/static/logo
 sudo chown -R www-data:www-data /opt/mikrocontrol/frontend/dist
-sudo chmod -R 755 /opt/mikrocontrol/backend
 ```
 
-### 10. Iniciar el backend
+### 11. Iniciar el backend
 ```bash
 sudo systemctl start mikrocontrol
 sleep 5
@@ -117,13 +131,13 @@ Verificá que diga `active (running)`. Si falla, revisá logs:
 sudo journalctl -u mikrocontrol -n 50 --no-pager
 ```
 
-### 11. Abrir puerto en firewall
+### 12. Abrir puerto en firewall
 ```bash
 sudo ufw allow 8094/tcp
 sudo ufw reload
 ```
 
-### 12. Acceder
+### 13. Acceder
 Abrí en el navegador: `http://IP_DEL_SERVIDOR:8094`
 
 El primer inicio crea el usuario **admin** con contraseña aleatoria. Para verla:
@@ -131,15 +145,11 @@ El primer inicio crea el usuario **admin** con contraseña aleatoria. Para verla
 sudo journalctl -u mikrocontrol | grep -i "contrase"
 ```
 
-Si no aparece o querés establecer una contraseña fija (`admin123`):
+Si necesitás restablecerla, usá una contraseña aleatoria segura:
 ```bash
 cd /opt/mikrocontrol/backend
 source venv/bin/activate
 python3 << 'EOF'
-from app.core.database import Base, engine
-from app.models import *
-Base.metadata.create_all(bind=engine)
-
 from app.core.security import get_password_hash
 from app.core.database import SessionLocal
 from app.models.user import User
@@ -147,16 +157,20 @@ from app.models.user import User
 db = SessionLocal()
 admin = db.query(User).filter(User.username == "admin").first()
 if admin:
-    admin.hashed_password = get_password_hash("admin123")
+    import secrets
+    password = secrets.token_urlsafe(18)
+    admin.hashed_password = get_password_hash(password)
 else:
+    import secrets
+    password = secrets.token_urlsafe(18)
     admin = User(username="admin", email="admin@mikrocontrol.local",
-                 full_name="Administrador",
-                 hashed_password=get_password_hash("admin123"),
-                 role="admin", is_active=True)
+                  full_name="Administrador",
+                  hashed_password=get_password_hash(password),
+                  role="admin", is_active=True)
     db.add(admin)
 db.commit()
 db.close()
-print("Admin listo (admin / admin123)")
+print(f"Admin listo. Nueva contraseña: {password}")
 EOF
 deactivate
 sudo systemctl restart mikrocontrol
@@ -167,7 +181,7 @@ sudo systemctl restart mikrocontrol
 cd /opt/mikrocontrol
 sudo git pull
 cd /opt/mikrocontrol/frontend
-npm install
+npm ci
 npm run build
 sudo systemctl restart mikrocontrol
 ```

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, cast, String
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import require_permission
 from app.core.router_access import get_visible_router_ids
 from app.core.datetime_utils import utc_iso
 from app.models.user import User
@@ -17,7 +17,7 @@ router = APIRouter()
 
 
 @router.get("/")
-def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(require_permission("dashboard:view"))):
     visible_ids = get_visible_router_ids(current_user, db)
     r_filter = (Router.id.in_(visible_ids)) if visible_ids is not None else None
 
@@ -68,10 +68,16 @@ def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(ge
     if visible_ids is not None:
         ev_q = ev_q.filter(EventLog.router_id.in_(visible_ids))
     events_today = ev_q.scalar() or 0
-    commands_today = db.query(func.count(AuditLog.id)).filter(
+    commands_today_q = db.query(func.count(AuditLog.id)).filter(
         AuditLog.action.in_(["create", "update", "delete", "command"]),
         AuditLog.timestamp >= today_start,
-    ).scalar() or 0
+    )
+    recent_activity_q = db.query(AuditLog)
+    if visible_ids is not None:
+        audit_visible = (AuditLog.resource_type != "router") | (AuditLog.resource_id.in_(visible_ids))
+        commands_today_q = commands_today_q.filter(audit_visible)
+        recent_activity_q = recent_activity_q.filter(audit_visible)
+    commands_today = commands_today_q.scalar() or 0
 
     wg_tunnels = db.query(func.count(Router.id)).filter(
         Router.is_online == True, Router.wg_address.isnot(None), Router.wg_address != ""
@@ -80,7 +86,7 @@ def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(ge
         wg_tunnels = wg_tunnels.filter(r_filter)
     wg_tunnels = wg_tunnels.scalar() or 0
 
-    recent_activity = db.query(AuditLog).order_by(AuditLog.timestamp.desc()).limit(10).all()
+    recent_activity = recent_activity_q.order_by(AuditLog.timestamp.desc()).limit(10).all()
 
     return {
         "routers": {
@@ -127,7 +133,7 @@ def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(ge
 
 
 @router.get("/charts")
-def get_charts(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_charts(db: Session = Depends(get_db), current_user: User = Depends(require_permission("dashboard:view"))):
     visible_ids = get_visible_router_ids(current_user, db)
     r_filter = (Router.id.in_(visible_ids)) if visible_ids is not None else None
     ev_filter = (EventLog.router_id.in_(visible_ids)) if visible_ids is not None else None

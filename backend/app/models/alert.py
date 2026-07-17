@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Boolean, JSON, Float, Index
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Boolean, JSON, Float, Index, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -49,4 +49,6 @@ class Alert(Base):
         Index("ix_alerts_router_created", "router_id", "created_at"),
         Index("ix_alerts_resolved_created", "is_resolved", "created_at"),
         Index("ix_alerts_severity_created", "severity", "created_at"),
+        Index("ix_alerts_unique_active_key", "router_id", "deduplication_key", unique=True,
+              postgresql_where=text("is_resolved = false AND deduplication_key IS NOT NULL")),
     )

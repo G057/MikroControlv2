@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { ROUTER_VIEW_PERMS } from '../types';
+import { ROUTER_VIEW_PERMS } from '../constants';
 import { useTheme } from '../contexts/ThemeContext';
 import {
   LayoutDashboard, Server, Users, Bell,
@@ -39,7 +39,7 @@ const navGroups: { label?: string; items: NavNode[] }[] = [
   {
     label: 'Sistema',
     items: [
-      { to: '/settings', icon: Settings, label: 'Configuración', permission: 'settings:view' },
+      { to: '/settings', icon: Settings, label: 'Configuración', permission: 'settings:edit' },
       { subheader: 'Administración de permisos' },
       { to: '/users', icon: Users, label: 'Usuarios', permission: 'users:view' },
       { to: '/roles', icon: Shield, label: 'Roles y Permisos', permission: 'roles:manage' },
@@ -60,6 +60,7 @@ export default function Layout() {
   const [alertCount, setAlertCount] = useState(0);
   const [prevCritical, setPrevCritical] = useState(0);
   const [appVersion, setAppVersion] = useState('');
+  const canViewEvents = hasPermission('events:view');
 
   const showToast = async (msg: string) => {
     const { toast } = await import('react-hot-toast');
@@ -79,10 +80,11 @@ export default function Layout() {
   }, [prevCritical]);
 
   useEffect(() => {
+    if (!canViewEvents) return;
     fetchAlertCount();
     const iv = setInterval(fetchAlertCount, 15000);
     return () => clearInterval(iv);
-  }, [fetchAlertCount]);
+  }, [canViewEvents, fetchAlertCount]);
 
   useEffect(() => {
     versionAPI.get().then((v) => setAppVersion(`v${v.version}${v.edition ? ' · ' + v.edition : ''}`)).catch(() => {});
@@ -184,14 +186,16 @@ export default function Layout() {
             <button onClick={toggle} className="p-2 text-white hover:text-white/90 rounded-lg hover:bg-white/15 transition-colors" title={isDark ? 'Modo día' : 'Modo noche'}>
               {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
-            <button onClick={() => navigate('/events')} className="relative p-2 text-white hover:text-white/90 rounded-lg hover:bg-white/15 transition-colors" title="Eventos">
-              <Bell className="w-5 h-5" />
-              {alertCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 px-1.5 py-0.5 rounded-full text-[10px] text-white font-bold min-w-[18px] text-center leading-none" style={{ background: c.red }}>
-                  {alertCount > 99 ? '99+' : alertCount}
-                </span>
-              )}
-            </button>
+            {canViewEvents && (
+              <button onClick={() => navigate('/events')} className="relative p-2 text-white hover:text-white/90 rounded-lg hover:bg-white/15 transition-colors" title="Eventos">
+                <Bell className="w-5 h-5" />
+                {alertCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 px-1.5 py-0.5 rounded-full text-[10px] text-white font-bold min-w-[18px] text-center leading-none" style={{ background: c.red }}>
+                    {alertCount > 99 ? '99+' : alertCount}
+                  </span>
+                )}
+              </button>
+            )}
             <span className="text-xs text-white/90">{nowArgentina()}</span>
           </div>
         </header>

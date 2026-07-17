@@ -3,7 +3,7 @@ import { lazy, Suspense } from 'react';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
-import { ROUTER_VIEW_PERMS } from './types';
+import { ROUTER_VIEW_PERMS } from './constants';
 import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
@@ -21,8 +21,6 @@ import SystemSettingsPage from './pages/SystemSettingsPage';
 import RolesPage from './pages/RolesPage';
 import MonitorPage from './pages/MonitorPage';
 import WizardPage from './pages/WizardPage';
-import NotificationFiltersPage from './pages/NotificationFiltersPage';
-import EventClassificationPage from './pages/EventClassificationPage';
 const EventExplorerPage = lazy(() => import('./pages/EventExplorerPage'));
 const EventReportPage = lazy(() => import('./pages/EventReportPage'));
 
@@ -75,9 +73,9 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
-      <Route path="/monitor" element={<ProtectedRoute><RequirePermission permission="monitor:view"><MonitorPage /></RequirePermission></ProtectedRoute>} />
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<DashboardOrMonitor />} />
+        <Route path="monitor" element={<RequirePermission permission="monitor:view"><MonitorPage /></RequirePermission>} />
         <Route path="routers" element={<RequireAnyPermission permissions={ROUTER_VIEW_PERMS}><RoutersPage /></RequireAnyPermission>} />
         <Route path="routers/:id" element={<RequireAnyPermission permissions={ROUTER_VIEW_PERMS}><RouterDetailPage /></RequireAnyPermission>} />
         <Route path="groups" element={<RequirePermission permission="groups:view"><GroupsPage /></RequirePermission>} />
@@ -86,14 +84,13 @@ function AppRoutes() {
         <Route path="events" element={<RequirePermission permission="events:view"><AlertsPage /></RequirePermission>} />
         <Route path="events/explorer" element={<RequirePermission permission="events:view"><Suspense fallback={<div>Cargando explorador...</div>}><EventExplorerPage /></Suspense></RequirePermission>} />
         <Route path="events/report" element={<RequirePermission permission="events:view"><Suspense fallback={<div>Cargando informes...</div>}><EventReportPage /></Suspense></RequirePermission>} />
-        <Route path="notification-filters" element={<RequirePermission permission="settings:edit"><NotificationFiltersPage /></RequirePermission>} />
-        <Route path="event-classification" element={<RequirePermission permission="settings:edit"><EventClassificationPage /></RequirePermission>} />
         <Route path="backups" element={<RequirePermission permission="routers:backup"><BackupsPage /></RequirePermission>} />
         <Route path="audit" element={<RequirePermission permission="audit:view"><AuditPage /></RequirePermission>} />
         <Route path="terminal" element={<RequirePermission permission="routers:terminal"><TerminalPage /></RequirePermission>} />
         <Route path="bulk-command" element={<RequirePermission permission="routers:bulk_command"><BulkCommandPage /></RequirePermission>} />
-        <Route path="settings" element={<RequirePermission permission="settings:view"><SystemSettingsPage /></RequirePermission>} />
+        <Route path="settings" element={<RequirePermission permission="settings:edit"><SystemSettingsPage /></RequirePermission>} />
         <Route path="wizard" element={<RequirePermission permission="routers:configure_wan"><WizardPage /></RequirePermission>} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
   );

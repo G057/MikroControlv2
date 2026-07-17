@@ -22,13 +22,15 @@ def _get_connection(router):
 class RouterOSConnection:
     """Conexión TCP socket a MikroTik RouterOS v7 API."""
 
-    def __init__(self, host, port=8728, username="admin", password="", use_ssl=False, timeout=10.0):
+    def __init__(self, host, port=8728, username="admin", password="", use_ssl=False, timeout=10.0, verify_tls=None):
+        from app.core.config import get_settings
         self.host = host
         self.port = port
         self.username = username
         self.password = password
         self.use_ssl = use_ssl
         self.timeout = timeout
+        self.verify_tls = get_settings().ROUTEROS_TLS_VERIFY if verify_tls is None else verify_tls
         self.sock = None
 
     def __enter__(self):
@@ -53,9 +55,13 @@ class RouterOSConnection:
         try:
             raw_sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
             if self.use_ssl:
-                ctx = ssl_module.SSLContext(ssl_module.PROTOCOL_TLS_CLIENT)
-                ctx.check_hostname = False
-                ctx.verify_mode = ssl_module.CERT_NONE
+                if self.verify_tls:
+                    ctx = ssl_module.create_default_context()
+                else:
+                    logger.warning("La verificación TLS está deshabilitada para RouterOS API-SSL")
+                    ctx = ssl_module.SSLContext(ssl_module.PROTOCOL_TLS_CLIENT)
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl_module.CERT_NONE
                 self.sock = ctx.wrap_socket(raw_sock, server_hostname=self.host)
             else:
                 self.sock = raw_sock
@@ -67,7 +73,10 @@ class RouterOSConnection:
         except ConnectionRefusedError:
             self._cleanup_socket(raw_sock)
             raise Exception("Conexión rechazada — el servicio API está deshabilitado o el puerto es incorrecto")
-        except ssl_module.SSLError as e:
+        except ssl_module.SSLCertVerificationError:
+            self._cleanup_socket(raw_sock)
+            raise Exception("Certificado SSL no confiable o no coincide con el host del router")
+        except ssl_module.SSLError:
             self._cleanup_socket(raw_sock)
             raise Exception("Error SSL — Verificá que API-SSL esté habilitado en el router")
         except OSError:
