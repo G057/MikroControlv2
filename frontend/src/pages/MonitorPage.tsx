@@ -325,9 +325,6 @@ export default function MonitorPage() {
             }} className="px-2 py-1 rounded-lg text-xs" style={{ color: popupsPaused ? c.textMuted : c.accent, border: `1px solid ${c.border}` }} title="Pausar o reanudar popups">
               {popupsPaused ? 'Reanudar' : 'Pausar'}
             </button>
-            <button onClick={closeAllPopups} className="px-2 py-1 rounded-lg text-xs" style={{ color: c.red, border: `1px solid ${c.border}` }} title="Cerrar todos los popups pendientes">
-              Cerrar popups
-            </button>
         </div>
       </div>
 
@@ -471,6 +468,9 @@ export default function MonitorPage() {
 
       {!popupsPaused && alertPopups.length > 0 && (
         <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-h-[80vh] overflow-y-auto" style={{ maxWidth: 384, scrollbarWidth: 'thin' }}>
+          <button onClick={closeAllPopups} className="w-full px-3 py-2 rounded-xl text-xs font-semibold shadow-lg" style={{ background: c.bgCard, color: c.red, border: `1px solid ${c.red}` }}>
+            Cerrar todos los popups ({alertPopups.length})
+          </button>
           {alertPopups.map(p => (
             <div key={p.id} className="w-96 rounded-xl p-4 shadow-2xl animate-slide-down flex-shrink-0" style={{ background: c.bgCard, border: `1px solid ${p.severity === 'critical' ? c.red : c.yellow}` }}>
               <div className="flex items-center justify-between mb-1">
