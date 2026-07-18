@@ -837,8 +837,14 @@ def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp
             # Newer RouterOS releases replaced the legacy BSD properties.
             actions = conn.command("/system/logging/action/print")
             action = next((item for item in actions if item.get("name") == syslog_action), None)
-            action_created = configure_remote_action(f"{remote_base} =remote-log-format=bsd-syslog")
-            remote_log_format = "bsd-syslog"
+            try:
+                action_created = configure_remote_action(f"{remote_base} =remote-log-format=bsd-syslog")
+                remote_log_format = "bsd-syslog"
+            except Exception as modern_exc:
+                if "remote-log-format" not in str(modern_exc).lower():
+                    raise
+                action_created = configure_remote_action(f"{remote_base} =remote-log-format=default")
+                remote_log_format = "default"
 
         rules = conn.command("/system/logging/print")
         existing_disk = {tuple(sorted(filter(None, rule.get("topics", "").split(",")))) for rule in rules if rule.get("action") == "disk"}
