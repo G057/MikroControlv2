@@ -809,7 +809,7 @@ def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp
                                  ntp_secondary: str, time_zone: str) -> dict:
     """Configures MikroControl's remote Syslog, durable logs, NTP and timezone."""
     desired_topics = ("system,error,critical", "ppp,info", "interface,info", "account,warning")
-    syslog_action = "mikrocontrolsyslog"
+    syslog_action = "actualizar_syslog_dns"
     conn = _get_connection(router)
     conn.connect()
     try:
@@ -847,10 +847,10 @@ def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp
         for topics in desired_topics:
             normalized = tuple(sorted(topics.split(",")))
             if normalized not in existing_disk:
-                conn.command(f'/system/logging/add =topics={topics} =action=disk =comment="MikroControl persistent logs"')
+                conn.command(f"/system/logging/add =topics={topics} =action=disk")
                 disk_created.append(topics)
             if normalized not in existing_remote:
-                conn.command(f'/system/logging/add =topics={topics} =action={syslog_action} =comment="MikroControl Syslog"')
+                conn.command(f"/system/logging/add =topics={topics} =action={syslog_action}")
                 syslog_created.append(topics)
         conn.command(f"/system/clock/set =time-zone-autodetect=no =time-zone-name={time_zone}")
         try:
