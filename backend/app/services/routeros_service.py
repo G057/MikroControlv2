@@ -809,7 +809,7 @@ def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp
                                  ntp_secondary: str, time_zone: str) -> dict:
     """Configures MikroControl's remote Syslog, durable logs, NTP and timezone."""
     desired_topics = ("system,error,critical", "ppp,info", "interface,info", "account,warning")
-    syslog_action = "mikrocontrol-syslog"
+    syslog_action = "mikrocontrolsyslog"
     conn = _get_connection(router)
     conn.connect()
     try:
