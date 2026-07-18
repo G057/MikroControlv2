@@ -3,6 +3,7 @@ import struct
 import ssl as ssl_module
 import logging
 import os
+import re
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -327,6 +328,31 @@ def _cmd(router, cmd):
     result = conn.command(cmd)
     conn.close()
     return result
+
+
+def _routeros_profile(conn) -> tuple[str, int]:
+    """Reads the RouterOS major version before an automatic configuration change."""
+    resources = conn.command("/system/resource/print")
+    version = resources[0].get("version", "") if resources else ""
+    match = re.match(r"\s*(\d+)", version)
+    if not match:
+        raise ValueError("No se pudo identificar la versión RouterOS; la configuración automática fue cancelada.")
+    major = int(match.group(1))
+    if major < 6:
+        raise ValueError(f"RouterOS {version} no está soportado por la configuración automática.")
+    return version, major
+
+
+def _ntp_ipv4(host: str) -> str:
+    """RouterOS v6 NTP properties accept an IPv4 address, not a hostname."""
+    try:
+        socket.inet_aton(host)
+        return host
+    except OSError:
+        try:
+            return socket.gethostbyname(host)
+        except OSError as exc:
+            raise ValueError(f"No se pudo resolver el servidor NTP {host}: {exc}")
 
 
 def get_system_resources(router):
@@ -820,6 +846,7 @@ def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp
     conn = _get_connection(router)
     conn.connect()
     try:
+        routeros_version, routeros_major = _routeros_profile(conn)
         actions = conn.command("/system/logging/action/print")
         if not any(action.get("name") == "disk" for action in actions):
             return {"success": False, "error": "El router no tiene la acción de logging 'disk'"}
@@ -834,23 +861,12 @@ def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp
             conn.command(f"/system/logging/action/add =name={syslog_action} {config}")
             return True
 
-        try:
+        if routeros_major == 6:
             action_created = configure_remote_action(f"{remote_base} =bsd-syslog=yes =syslog-time-format=bsd-syslog")
             remote_log_format = "bsd-syslog"
-        except Exception as exc:
-            if "bsd-syslog" not in str(exc).lower() and "syslog-time-format" not in str(exc).lower():
-                raise
-            # Newer RouterOS releases replaced the legacy BSD properties.
-            actions = conn.command("/system/logging/action/print")
-            action = next((item for item in actions if item.get("name") == syslog_action), None)
-            try:
-                action_created = configure_remote_action(f"{remote_base} =remote-log-format=bsd-syslog")
-                remote_log_format = "bsd-syslog"
-            except Exception as modern_exc:
-                if "remote-log-format" not in str(modern_exc).lower():
-                    raise
-                action_created = configure_remote_action(f"{remote_base} =remote-log-format=default")
-                remote_log_format = "default"
+        else:
+            action_created = configure_remote_action(f"{remote_base} =remote-log-format=syslog =remote-protocol=udp =syslog-time-format=bsd-syslog")
+            remote_log_format = "syslog"
 
         rules = conn.command("/system/logging/print")
         # Remove only the narrower rules created by earlier MikroControl
@@ -872,16 +888,15 @@ def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp
                 conn.command(f"/system/logging/add =topics={topics} =action={syslog_action}")
                 syslog_created.append(topics)
         conn.command(f"/system/clock/set =time-zone-autodetect=no =time-zone-name={time_zone}")
-        try:
+        if routeros_major == 6:
+            conn.command(f"/system/ntp/client/set =enabled=yes =primary-ntp={_ntp_ipv4(ntp_primary)} =secondary-ntp={_ntp_ipv4(ntp_secondary)}")
+            ntp_mode = "legacy"
+        else:
             conn.command(f"/system/ntp/client/set =enabled=yes =servers={ntp_primary},{ntp_secondary}")
             ntp_mode = "v7"
-        except Exception:
-            # RouterOS v6 does not support the v7 `servers` property.
-            conn.command(f"/system/ntp/client/set =enabled=yes =primary-ntp={ntp_primary} =secondary-ntp={ntp_secondary}")
-            ntp_mode = "legacy"
         return {"success": True, "disk_created": disk_created, "syslog_created": syslog_created,
                 "action_created": action_created, "configured": list(desired_topics), "ntp_mode": ntp_mode,
-                "remote_log_format": remote_log_format}
+                "remote_log_format": remote_log_format, "routeros_version": routeros_version}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
     finally:
@@ -921,6 +936,7 @@ def configure_wan(router, wan_interface: str, wan_type: str, **kwargs) -> dict:
     conn = _get_connection(router)
     conn.connect()
     try:
+        routeros_version, _ = _routeros_profile(conn)
         if wan_type == "dhcp":
             for d in conn.command("/ip/dhcp-client/print"):
                 if d.get("interface") == wan_interface and ".id" in d:
@@ -966,7 +982,8 @@ def configure_wan(router, wan_interface: str, wan_type: str, **kwargs) -> dict:
             raise ValueError(f"Tipo WAN inválido: {wan_type}")
 
         conn.close()
-        return {"success": True, "message": f"Configuración WAN ({wan_type}) aplicada en {wan_interface}"}
+        return {"success": True, "message": f"Configuración WAN ({wan_type}) aplicada en {wan_interface}",
+                "routeros_version": routeros_version}
     except Exception as e:
         try: conn.close()
         except: pass
