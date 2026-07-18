@@ -809,7 +809,8 @@ def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp
                                  ntp_secondary: str, time_zone: str) -> dict:
     """Configures MikroControl's remote Syslog, durable logs, NTP and timezone."""
     desired_topics = ("system,error,critical", "ppp,info", "interface,info", "account,warning")
-    syslog_action = "actualizar_syslog_dns"
+    # The DNS updater script manages this RouterOS remote logging action.
+    syslog_action = "syslogremoto"
     conn = _get_connection(router)
     conn.connect()
     try:
@@ -820,8 +821,7 @@ def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp
         action = next((item for item in actions if item.get("name") == syslog_action), None)
         remote_base = f"=target=remote =remote={syslog_host} =remote-port={syslog_port}"
 
-        def configure_remote_action(log_format):
-            config = f"{remote_base} =remote-log-format={log_format}"
+        def configure_remote_action(config):
             if action and action.get(".id"):
                 conn.command(f"/system/logging/action/set =.id={action['.id']} {config}")
                 return False
@@ -829,16 +829,16 @@ def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp
             return True
 
         try:
-            action_created = configure_remote_action("bsd-syslog")
+            action_created = configure_remote_action(f"{remote_base} =bsd-syslog=yes =syslog-time-format=bsd-syslog")
             remote_log_format = "bsd-syslog"
         except Exception as exc:
-            if "remote-log-format" not in str(exc).lower():
+            if "bsd-syslog" not in str(exc).lower() and "syslog-time-format" not in str(exc).lower():
                 raise
-            # Older RouterOS releases only accept the default remote format.
+            # Newer RouterOS releases replaced the legacy BSD properties.
             actions = conn.command("/system/logging/action/print")
             action = next((item for item in actions if item.get("name") == syslog_action), None)
-            action_created = configure_remote_action("default")
-            remote_log_format = "default"
+            action_created = configure_remote_action(f"{remote_base} =remote-log-format=bsd-syslog")
+            remote_log_format = "bsd-syslog"
 
         rules = conn.command("/system/logging/print")
         existing_disk = {tuple(sorted(filter(None, rule.get("topics", "").split(",")))) for rule in rules if rule.get("action") == "disk"}
@@ -849,7 +849,9 @@ def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp
             if normalized not in existing_disk:
                 conn.command(f"/system/logging/add =topics={topics} =action=disk")
                 disk_created.append(topics)
-            if normalized not in existing_remote:
+            # Existing broad rules such as info/error/warning/critical already
+            # cover RouterOS events and must not be duplicated.
+            if not existing_remote and normalized not in existing_remote:
                 conn.command(f"/system/logging/add =topics={topics} =action={syslog_action}")
                 syslog_created.append(topics)
         conn.command(f"/system/clock/set =time-zone-autodetect=no =time-zone-name={time_zone}")
