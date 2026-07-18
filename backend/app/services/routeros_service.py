@@ -808,7 +808,13 @@ def get_wan_interfaces(router) -> list:
 def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp_primary: str,
                                  ntp_secondary: str, time_zone: str) -> dict:
     """Configures MikroControl's remote Syslog, durable logs, NTP and timezone."""
-    desired_topics = ("system,error,critical", "ppp,info", "interface,info", "account,warning")
+    # RouterOS logs carry a subsystem plus a severity topic (for example
+    # script,warning). Severity rules cover every subsystem without gaps.
+    desired_topics = ("critical", "info", "error", "warning")
+    previous_topics = {
+        tuple(sorted(topics.split(",")))
+        for topics in ("system,error,critical", "ppp,info", "interface,info", "account,warning")
+    }
     # The DNS updater script manages this RouterOS remote logging action.
     syslog_action = "syslogremoto"
     conn = _get_connection(router)
@@ -847,6 +853,13 @@ def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp
                 remote_log_format = "default"
 
         rules = conn.command("/system/logging/print")
+        # Remove only the narrower rules created by earlier MikroControl
+        # versions. Keeping them alongside severity rules sends duplicates.
+        for rule in rules:
+            topics = tuple(sorted(filter(None, rule.get("topics", "").split(","))))
+            if rule.get("action") in ("disk", syslog_action) and topics in previous_topics and rule.get(".id"):
+                conn.command(f"/system/logging/remove =.id={rule['.id']}")
+        rules = conn.command("/system/logging/print")
         existing_disk = {tuple(sorted(filter(None, rule.get("topics", "").split(",")))) for rule in rules if rule.get("action") == "disk"}
         existing_remote = {tuple(sorted(filter(None, rule.get("topics", "").split(",")))) for rule in rules if rule.get("action") == syslog_action}
         disk_created, syslog_created = [], []
@@ -855,9 +868,7 @@ def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp
             if normalized not in existing_disk:
                 conn.command(f"/system/logging/add =topics={topics} =action=disk")
                 disk_created.append(topics)
-            # Existing broad rules such as info/error/warning/critical already
-            # cover RouterOS events and must not be duplicated.
-            if not existing_remote and normalized not in existing_remote:
+            if normalized not in existing_remote:
                 conn.command(f"/system/logging/add =topics={topics} =action={syslog_action}")
                 syslog_created.append(topics)
         conn.command(f"/system/clock/set =time-zone-autodetect=no =time-zone-name={time_zone}")
