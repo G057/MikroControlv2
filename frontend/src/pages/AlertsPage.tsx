@@ -125,6 +125,18 @@ export default function EventsPage() {
     } catch (err: any) { toast.error(err.message); }
   };
 
+  const handleResolveAll = async () => {
+    if (!window.confirm('¿Resolver todas las alertas sin resolver que podés ver? Esta acción no se puede deshacer.')) return;
+    try {
+      const result = await alertsAPI.resolveAll('Resolución masiva desde Eventos');
+      toast.success(`${result.resolved} alertas resueltas`);
+      load();
+      loadCounts();
+    } catch (err: any) {
+      toast.error(err.message || 'No se pudieron resolver las alertas');
+    }
+  };
+
   const sevMap: Record<string, { icon: any; color: string; bg: string; label: string }> = {
     critical: { icon: AlertCircle, color: c.red, bg: c.redBg, label: 'Crítico' },
     warning: { icon: AlertTriangle, color: c.yellow, bg: c.yellowBg, label: 'Advertencia' },
@@ -135,11 +147,18 @@ export default function EventsPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold" style={{ color: c.textPrimary }}>Eventos</h1>
-        {hasPermission('settings:edit') && (
-          <button onClick={handleRefresh} disabled={loading} className="btn-secondary text-sm">
-            <RefreshCw className={`w-4 h-4 inline mr-1 ${loading ? 'animate-spin' : ''}`} />Actualizar logs
-          </button>
-        )}
+        <div className="flex gap-2">
+          {severityFilter === 'unresolved' && hasPermission('events:view') && (
+            <button onClick={handleResolveAll} className="btn-secondary text-sm" style={{ color: c.red }}>
+              <CheckCircle className="w-4 h-4 inline mr-1" />Resolver todas
+            </button>
+          )}
+          {hasPermission('settings:edit') && (
+            <button onClick={handleRefresh} disabled={loading} className="btn-secondary text-sm">
+              <RefreshCw className={`w-4 h-4 inline mr-1 ${loading ? 'animate-spin' : ''}`} />Actualizar logs
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-4 gap-3">

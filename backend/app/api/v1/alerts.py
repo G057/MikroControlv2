@@ -114,15 +114,16 @@ def resolve_all_alerts(
     visible_ids = get_visible_router_ids(current_user, db)
     if visible_ids is not None:
         query = query.filter((Alert.router_id.is_(None)) | (Alert.router_id.in_(visible_ids)))
-    query.update({
-        "is_resolved": True,
-        "resolved_at": now,
-        "resolved_by": current_user.username,
-        "resolution_comment": comment,
-    })
-    log_audit(db, current_user.username, "resolve_all", "alert", details={"comment": comment}, user_id=current_user.id)
+    alerts = list(_visible_alerts(query, current_user, db))
+    for alert in alerts:
+        alert.is_resolved = True
+        alert.resolved_at = now
+        alert.resolved_by = current_user.username
+        alert.resolution_comment = comment
+    log_audit(db, current_user.username, "resolve_all", "alert",
+              details={"comment": comment, "count": len(alerts)}, user_id=current_user.id)
     db.commit()
-    return {"detail": "Todas las alertas resueltas"}
+    return {"detail": "Todas las alertas resueltas", "resolved": len(alerts)}
 
 
 @router.get("/rules/", response_model=List[AlertRuleResponse])

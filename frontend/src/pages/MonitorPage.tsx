@@ -5,6 +5,7 @@ import { monitorAPI } from '../services/api';
 import { formatDateTime } from '../utils/date';
 import type { MonitorRouter } from '../types';
 import type { MonitorNotification } from '../services/api';
+import toast from 'react-hot-toast';
 import {
   Search,
   X,
@@ -211,6 +212,18 @@ export default function MonitorPage() {
     });
   };
 
+  const closeAllPopups = async () => {
+    if (!window.confirm('¿Cerrar todos los popups pendientes? Esta acción no resuelve las alertas.')) return;
+    try {
+      const result = await monitorAPI.acknowledgeAll();
+      setAlertPopups([]);
+      deferredNotificationsRef.current = [];
+      toast.success(`${result.acknowledged} popups cerrados`);
+    } catch (error: any) {
+      toast.error(error.message || 'No se pudieron cerrar los popups');
+    }
+  };
+
   return (
     <div className="space-y-4" style={{ color: c.textPrimary }}>
       <div className="flex flex-wrap items-center gap-3">
@@ -311,6 +324,9 @@ export default function MonitorPage() {
               }
             }} className="px-2 py-1 rounded-lg text-xs" style={{ color: popupsPaused ? c.textMuted : c.accent, border: `1px solid ${c.border}` }} title="Pausar o reanudar popups">
               {popupsPaused ? 'Reanudar' : 'Pausar'}
+            </button>
+            <button onClick={closeAllPopups} className="px-2 py-1 rounded-lg text-xs" style={{ color: c.red, border: `1px solid ${c.border}` }} title="Cerrar todos los popups pendientes">
+              Cerrar popups
             </button>
         </div>
       </div>

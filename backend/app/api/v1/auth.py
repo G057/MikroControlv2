@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from app.core.database import get_db
 from app.core.security import verify_password, create_access_token, get_current_user, get_user_permissions
 from app.models.user import User
+from app.models.monitoring import Notification
 from app.schemas.user import LoginRequest, TokenResponse, UserResponse
 from app.utils.audit import log_audit
 
@@ -79,6 +80,12 @@ def login(request: LoginRequest, req: Request, db: Session = Depends(get_db)):
     user.last_login = datetime.now(timezone.utc)
     log_audit(db, user.username, "login", "auth", user_id=user.id,
               ip_address=req.client.host if req.client else None)
+    db.add(Notification(
+        notification_type="app_login", severity="info", title="Inicio de sesión en MikroControl",
+        message=f"{user.username} inició sesión desde {req.client.host if req.client else 'IP desconocida'}",
+        popup_required=False, sound_required=False, telegram_required=False,
+        deduplication_key=f"app_login:{user.id}:{datetime.now(timezone.utc).timestamp()}",
+    ))
     db.commit()
 
     perms = get_user_permissions(user)

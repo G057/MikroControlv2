@@ -46,6 +46,9 @@ DEFAULTS = {
     "smtp_tls": "true",
     "telegram_bot_token": "",
     "telegram_chat_id": "",
+    "telegram_direct_enabled": "false",
+    "telegram_direct_chat_id": "",
+    "telegram_direct_event_types": "[\"app_login\"]",
     "notify_router_offline": "true",
     "notify_router_online": "true",
     "notify_critical_alert": "true",
@@ -162,6 +165,9 @@ class SettingsUpdate(BaseModel):
     smtp_tls: Optional[str] = None
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
+    telegram_direct_enabled: Optional[str] = None
+    telegram_direct_chat_id: Optional[str] = None
+    telegram_direct_event_types: Optional[str] = None
     notify_router_offline: Optional[str] = None
     notify_router_online: Optional[str] = None
     notify_critical_alert: Optional[str] = None
@@ -350,6 +356,15 @@ def update_settings(
     current_user: User = Depends(require_permission("settings:edit")),
 ):
     updates = data.model_dump(exclude_unset=True)
+    if "telegram_direct_event_types" in updates:
+        try:
+            direct_types = json.loads(updates["telegram_direct_event_types"])
+        except (TypeError, json.JSONDecodeError):
+            raise HTTPException(status_code=422, detail="Los tipos de eventos del chat directo no son válidos.")
+        allowed_direct_types = {"app_login", "router_offline", "critical", "warning", "recovery"}
+        if not isinstance(direct_types, list) or any(item not in allowed_direct_types for item in direct_types):
+            raise HTTPException(status_code=422, detail="Los tipos de eventos del chat directo no son válidos.")
+        updates["telegram_direct_event_types"] = json.dumps(direct_types)
     if updates.get("syslog_enabled") == "true":
         syslog_host = updates.get("syslog_server_host", get_setting(db, "syslog_server_host", "")).strip()
         if not syslog_host or any(char.isspace() for char in syslog_host) or "://" in syslog_host:
@@ -479,6 +494,31 @@ def test_telegram(
             raise HTTPException(status_code=400, detail=f"Error de Telegram: {detail}")
     except httpx.RequestError as e:
         raise HTTPException(status_code=400, detail=f"Error de conexión: {str(e)}")
+
+
+@router.post("/test-telegram-direct")
+def test_telegram_direct(
+    req: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("settings:edit")),
+):
+    settings = _get_all(db)
+    token = settings.get("telegram_bot_token", "")
+    chat_id = settings.get("telegram_direct_chat_id", "")
+    if not token or not chat_id:
+        raise HTTPException(status_code=400, detail="Chat directo de Telegram no configurado")
+    try:
+        response = httpx.post(f"https://api.telegram.org/bot{token}/sendMessage", json={
+            "chat_id": chat_id, "text": "MikroControl - Prueba de notificación directa", "parse_mode": "HTML",
+        }, timeout=10)
+        if not response.is_success or not response.json().get("ok"):
+            raise HTTPException(status_code=400, detail=f"Error de Telegram: {response.json().get('description', response.text)}")
+        log_audit(db, current_user.username, "test_telegram_direct", "settings", user_id=current_user.id,
+                  ip_address=req.client.host if req.client else None)
+        db.commit()
+        return {"success": True, "message": "Mensaje enviado al chat directo"}
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=400, detail=f"Error de conexión: {exc}")
 
 
 def send_email(settings: dict, subject: str, body: str):

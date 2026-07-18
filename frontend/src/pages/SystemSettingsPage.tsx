@@ -83,6 +83,7 @@ function SMTPTab({ settings, onSave, c }: { settings: SystemSettings; onSave: (d
 function TelegramTab({ settings, onSave, c }: { settings: SystemSettings; onSave: (d: Partial<SystemSettings>) => void; c: any }) {
   const [form, setForm] = useState(settings);
   const [testing, setTesting] = useState(false);
+  const [testingDirect, setTestingDirect] = useState(false);
 
   useEffect(() => { setForm(settings); }, [settings]);
 
@@ -94,6 +95,27 @@ function TelegramTab({ settings, onSave, c }: { settings: SystemSettings; onSave
       toast.success(res.message);
     } catch (e: any) { toast.error(e.message); }
     setTesting(false);
+  };
+
+  const handleDirectTest = async () => {
+    setTestingDirect(true);
+    try {
+      await settingsAPI.update(form);
+      const res = await settingsAPI.testTelegramDirect();
+      toast.success(res.message);
+    } catch (e: any) { toast.error(e.message); }
+    setTestingDirect(false);
+  };
+
+  const directTypes = () => {
+    try { return new Set<string>(JSON.parse(form.telegram_direct_event_types || '[]')); }
+    catch { return new Set<string>(); }
+  };
+
+  const toggleDirectType = (type: string) => {
+    const selected = directTypes();
+    if (selected.has(type)) selected.delete(type); else selected.add(type);
+    setForm({ ...form, telegram_direct_event_types: JSON.stringify([...selected]) });
   };
 
   return (
@@ -122,6 +144,29 @@ function TelegramTab({ settings, onSave, c }: { settings: SystemSettings; onSave
           <li>Mandale un mensaje a tu bot, luego entrá a <code>api.telegram.org/bot[TOKEN]/getUpdates</code></li>
           <li>Buscá el <code>chat.id</code> en la respuesta y pegalo arriba</li>
         </ol>
+      </div>
+      <div className="pt-4 space-y-3" style={{ borderTop: `1px solid ${c.border}` }}>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium" style={{ color: c.textPrimary }}>Chat directo</span>
+          <Toggle value={form.telegram_direct_enabled === 'true'} onChange={v => setForm({ ...form, telegram_direct_enabled: v ? 'true' : 'false' })} c={c} />
+        </div>
+        <p className="text-xs" style={{ color: c.textMuted }}>Destino privado adicional. No reemplaza ni modifica el grupo de Telegram.</p>
+        <label className="block text-[10px] uppercase font-medium" style={{ color: c.textMuted }}>Chat ID privado
+          <input className="input w-full text-sm mt-1" placeholder="123456789" value={form.telegram_direct_chat_id || ''}
+            onChange={e => setForm({ ...form, telegram_direct_chat_id: e.target.value })} />
+        </label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {[
+            ['app_login', 'Inicio de sesión en MikroControl'],
+            ['router_offline', 'Router offline'],
+            ['critical', 'Alertas críticas'],
+            ['warning', 'Alertas de advertencia'],
+            ['recovery', 'Recuperaciones'],
+          ].map(([key, label]) => <label key={key} className="flex items-center gap-2 text-xs" style={{ color: c.textSecondary }}>
+            <input type="checkbox" checked={directTypes().has(key)} onChange={() => toggleDirectType(key)} />{label}
+          </label>)}
+        </div>
+        <button onClick={handleDirectTest} disabled={testingDirect} className="btn-secondary text-sm"><Send className="w-4 h-4 inline mr-1" />{testingDirect ? 'Enviando...' : 'Probar chat directo'}</button>
       </div>
       <div className="flex gap-2">
         <button onClick={() => onSave(form)} className="btn-primary text-sm"><Save className="w-4 h-4 inline mr-1" />Guardar</button>

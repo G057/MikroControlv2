@@ -226,7 +226,7 @@ export const alertsAPI = {
   },
   unresolvedCount: () => request<{ total: number; critical: number; warning: number; info: number }>('/alerts/unresolved-count'),
   resolve: (id: number, comment?: string) => request(`/alerts/${id}/resolve`, { method: 'PUT', body: JSON.stringify({ comment }) }),
-  resolveAll: (comment?: string) => request('/alerts/resolve-all', { method: 'PUT', body: JSON.stringify({ comment }) }),
+  resolveAll: (comment?: string) => request<{ detail: string; resolved: number }>('/alerts/resolve-all', { method: 'PUT', body: JSON.stringify({ comment }) }),
   listRules: () => request<AlertRule[]>('/alerts/rules/'),
   createRule: (data: Partial<AlertRule>) =>
     request<AlertRule>('/alerts/rules/', { method: 'POST', body: JSON.stringify(data) }),
@@ -277,6 +277,7 @@ export interface SystemSettings {
   smtp_host: string; smtp_port: string; smtp_user: string; smtp_password: string;
   smtp_from: string; smtp_tls: string;
   telegram_bot_token: string; telegram_chat_id: string;
+  telegram_direct_enabled: string; telegram_direct_chat_id: string; telegram_direct_event_types: string;
   notify_router_offline: string; notify_router_online: string;
   notify_critical_alert: string; notify_warning_alert: string;
   notify_repeat_critical: string; notify_repeat_warning: string;
@@ -354,6 +355,7 @@ export const settingsAPI = {
     request<SystemSettings>('/settings/', { method: 'PUT', body: JSON.stringify(data) }),
   testEmail: () => request<{ success: boolean; message: string }>('/settings/test-email', { method: 'POST' }),
   testTelegram: () => request<{ success: boolean; message: string }>('/settings/test-telegram', { method: 'POST' }),
+  testTelegramDirect: () => request<{ success: boolean; message: string }>('/settings/test-telegram-direct', { method: 'POST' }),
   backupDownload: () => {
     const token = localStorage.getItem('mc_token');
     fetch('/api/v1/settings/backup/download', { headers: { Authorization: `Bearer ${token}` } })
@@ -599,6 +601,7 @@ export const monitorAPI = {
   notifications: (after_id: number, limit = 100) =>
     request<NotificationBatch>(`/monitor/notifications?after_id=${after_id}&limit=${limit}`),
   acknowledge: (id: number) => request<{ status: string }>(`/monitor/notifications/${id}/acknowledge`, { method: 'PUT' }),
+  acknowledgeAll: () => request<{ acknowledged: number }>('/monitor/notifications/acknowledge-all', { method: 'PUT' }),
 };
 
 export interface MonitorNotification {

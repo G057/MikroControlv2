@@ -12,6 +12,7 @@ from app.models.router import Router
 from app.models.alert import Alert
 from app.models.event_log import EventLog
 from app.models.monitoring import Notification
+from app.utils.audit import log_audit
 
 router = APIRouter()
 
@@ -74,6 +75,30 @@ def acknowledge_notification(
     item.acknowledged_by = current_user.username
     db.commit()
     return {"status": item.status}
+
+
+@router.put("/notifications/acknowledge-all")
+def acknowledge_all_notifications(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("monitor:view")),
+):
+    visible_ids = get_visible_router_ids(current_user, db)
+    query = db.query(Notification).filter(
+        Notification.status != "acknowledged",
+        Notification.popup_required == True,
+        Notification.suppressed_at.is_(None),
+    )
+    if visible_ids is not None:
+        query = query.filter((Notification.router_id.is_(None)) | (Notification.router_id.in_(visible_ids)))
+    count = query.update({
+        "status": "acknowledged",
+        "acknowledged_at": datetime.now(timezone.utc),
+        "acknowledged_by": current_user.username,
+    }, synchronize_session=False)
+    log_audit(db, current_user.username, "acknowledge_all", "notification",
+              details={"count": count}, user_id=current_user.id)
+    db.commit()
+    return {"acknowledged": count}
 
 
 def _alert_counts(db, visible_ids):
