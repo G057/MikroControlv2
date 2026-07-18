@@ -207,6 +207,8 @@ def ingest_event(db, item: NormalizedEvent, create_alert: bool = True, create_no
     # the same incident through different sources after a reconnection.
     repeated = db.query(EventLog).filter(EventLog.router_id == item.router_id,
                                           EventLog.deduplication_key == deduplication_key,
+                                          EventLog.topics == item.topics,
+                                          EventLog.message == item.message,
                                           EventLog.last_seen >= item.received_timestamp - timedelta(minutes=window_minutes)).order_by(EventLog.id.desc()).first()
     if repeated:
         repeated.last_seen = item.received_timestamp
