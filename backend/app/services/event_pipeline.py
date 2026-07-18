@@ -81,7 +81,98 @@ class NormalizedEvent:
 
 def _active_alert(db, router_id: int, key: str):
     return db.query(Alert).filter(Alert.router_id == router_id, Alert.deduplication_key == key,
-                                  Alert.is_resolved == False).first()
+                                   Alert.is_resolved == False).first()
+
+
+def _create_notification(db, event, alert, severity, notification_type, title, message, deduplication_key, available_after=None, popup_required=None, telegram_required=True):
+    notification = Notification(
+        event_log_id=event.id, alert_id=alert.id if alert else None, router_id=event.router_id,
+        notification_type=notification_type, severity=severity, title=title[:200], message=message[:500],
+        popup_required=severity != "info" if popup_required is None else popup_required,
+        sound_required=severity in ("critical", "warning", "recovery") and (severity != "info" if popup_required is None else popup_required),
+        telegram_required=telegram_required,
+        deduplication_key=deduplication_key, available_after=available_after,
+    )
+    db.add(notification)
+    db.flush()
+    return notification
+
+
+def _notification_channels(db, item, severity, force_report=False):
+    """Applies channel exclusions after recovery matching, unless explicitly forced."""
+    if force_report:
+        return severity != "info", True
+    from app.core.event_filter import is_event_excluded, load_popup_filters, load_telegram_filters
+    # Critical health connectivity remains non-suppressible as documented in Filters.
+    health_critical = item.topics.startswith("health,") and severity == "critical"
+    popup = health_critical or not is_event_excluded(item.message, item.topics, load_popup_filters(db))
+    telegram = health_critical or not is_event_excluded(item.message, item.topics, load_telegram_filters(db))
+    return popup and severity != "info", telegram
+
+
+def _apply_recovery_rules(db, item, event, create_notification: bool):
+    """Applies configured opening/recovery pairs before generic alert handling."""
+    from app.core.event_filter import event_matches_filter, load_json_setting
+
+    now = item.received_timestamp
+    rules = load_json_setting(db, "alert_recovery_rules")
+    for rule in rules:
+        if not rule.get("enabled", True) or not rule.get("id"):
+            continue
+        key = f"auto-recovery:{rule['id']}"
+        if event_matches_filter(item.message, item.topics, rule.get("recovery", {})):
+            alert = _active_alert(db, item.router_id, key)
+            window = timedelta(seconds=max(1, int(rule.get("recovery_window_seconds", 300))))
+            if alert and alert.first_seen and now - alert.first_seen <= window:
+                alert.is_resolved = True
+                alert.resolved_at = now
+                alert.resolved_by = "automatic"
+                alert.resolution_comment = rule.get("resolution_comment") or "Resuelta automáticamente al detectar recuperación."
+                alert.resolution_event_id = event.id
+                db.query(Notification).filter(
+                    Notification.alert_id == alert.id,
+                    Notification.suppressed_at.is_(None),
+                    Notification.available_after.isnot(None),
+                    Notification.available_after > now,
+                ).update({"suppressed_at": now, "suppression_reason": "recovered_before_notification"}, synchronize_session=False)
+                notification = None
+                if create_notification:
+                    popup_required, telegram_required = _notification_channels(db, item, "recovery", rule.get("force_recovery_report", False))
+                    notification = _create_notification(
+                        db, event, alert, "recovery", "auto_recovery", f"{item.router_name}: recuperación confirmada",
+                        alert.resolution_comment, f"{key}:recovery:{event.id}", popup_required=popup_required, telegram_required=telegram_required,
+                    )
+                return alert, notification, True
+            # A recovery pattern is informational even when its matching alert
+            # already expired or was resolved manually.
+            return None, None, True
+
+        if event_matches_filter(item.message, item.topics, rule.get("opening", {})):
+            alert = _active_alert(db, item.router_id, key)
+            if alert:
+                alert.occurrence_count += 1
+                alert.last_seen = now
+                return alert, None, True
+            severity = rule.get("severity", "warning")
+            alert = Alert(
+                router_id=item.router_id, alert_type=f"auto_recovery_{rule['id']}", severity=severity,
+                title=f"{item.router_name}: {rule.get('name', 'evento detectado')}", message=item.message[:500],
+                opening_event_id=event.id, deduplication_key=key, occurrence_count=1,
+                first_seen=now, last_seen=now,
+            )
+            db.add(alert)
+            db.flush()
+            notification = None
+            if create_notification:
+                delay = max(0, int(rule.get("delay_seconds", 0))) if rule.get("delay_notification") else 0
+                popup_required, telegram_required = _notification_channels(db, item, severity)
+                notification = _create_notification(
+                    db, event, alert, severity, "auto_recovery_open", alert.title, alert.message,
+                    f"{key}:open:{event.id}", now + timedelta(seconds=delay) if delay else None,
+                    popup_required=popup_required, telegram_required=telegram_required,
+                )
+            return alert, notification, True
+    return None, None, False
 
 
 def ingest_event(db, item: NormalizedEvent, create_alert: bool = True, create_notification: bool = True):
@@ -128,8 +219,8 @@ def ingest_event(db, item: NormalizedEvent, create_alert: bool = True, create_no
         event = db.query(EventLog).filter(EventLog.canonical_hash == canonical_hash).first()
         return event, False, None, None
 
-    alert = None
-    if create_alert and item.severity in ("warning", "critical"):
+    alert, notification, handled_by_recovery_rule = _apply_recovery_rules(db, item, event, create_notification)
+    if not handled_by_recovery_rule and create_alert and item.severity in ("warning", "critical"):
         alert = _active_alert(db, item.router_id, deduplication_key)
         if alert:
             alert.occurrence_count += 1
@@ -143,7 +234,7 @@ def ingest_event(db, item: NormalizedEvent, create_alert: bool = True, create_no
             db.add(alert)
             db.flush()
 
-    if item.event_type.endswith("_up") or item.event_type.endswith("_restored"):
+    if not handled_by_recovery_rule and (item.event_type.endswith("_up") or item.event_type.endswith("_restored")):
         down_type = item.event_type.replace("_up", "_down").replace("_restored", "_loss")
         resolution_key = f"{item.router_id}:{down_type}"
         open_alert = _active_alert(db, item.router_id, resolution_key)
@@ -152,14 +243,11 @@ def ingest_event(db, item: NormalizedEvent, create_alert: bool = True, create_no
             open_alert.resolved_at = item.received_timestamp
             open_alert.resolution_event_id = event.id
 
-    notification = None
-    if create_notification and item.severity in ("critical", "warning", "recovery"):
-        notification = Notification(event_log_id=event.id, alert_id=alert.id if alert else None,
-                                    router_id=item.router_id, notification_type=item.event_type,
-                                    severity=item.severity, title=f"{item.router_name}: {item.event_type.replace('_', ' ')}",
-                                    message=item.message[:500], popup_required=item.severity != "info",
-                                    sound_required=item.severity in ("critical", "warning", "recovery"),
-                                    deduplication_key=deduplication_key)
-        db.add(notification)
-        db.flush()
+    if not handled_by_recovery_rule and create_notification and item.severity in ("critical", "warning", "recovery"):
+        popup_required, telegram_required = _notification_channels(db, item, item.severity)
+        notification = _create_notification(
+            db, event, alert, item.severity, item.event_type,
+            f"{item.router_name}: {item.event_type.replace('_', ' ')}", item.message, deduplication_key,
+            popup_required=popup_required, telegram_required=telegram_required,
+        )
     return event, True, alert, notification

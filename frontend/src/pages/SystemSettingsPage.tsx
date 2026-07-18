@@ -797,8 +797,18 @@ function LogoEditTab({ c }: { c: any }) {
   );
 }
 
+function AlertRecoveryRulesTab({ c }: { c: any }) {
+  const [rules, setRules] = useState<import('../services/api').AlertRecoveryRule[]>([]);
+  const [gallery, setGallery] = useState<EventFilterRule[]>([]);
+  useEffect(() => { Promise.all([settingsAPI.alertRecoveryRules(), settingsAPI.filterGallery()]).then(([r, g]) => { setRules(r.rules); setGallery(g.filters); }).catch(e => toast.error(e.message)); }, []);
+  const add = () => setRules(prev => [...prev, { id: `recovery-${Date.now()}`, name: 'Recuperación automática', enabled: true, opening: { id: '', name: '', pattern: '', mode: 'contains', field: 'message', enabled: true }, recovery: { id: '', name: '', pattern: '', mode: 'contains', field: 'message', enabled: true }, severity: 'warning', recovery_window_seconds: 300, delay_notification: true, delay_seconds: 30, force_recovery_report: false, resolution_comment: 'Resuelta automáticamente al detectar reconexión dentro del tiempo permitido.' }]);
+  const update = (index: number, patch: Partial<import('../services/api').AlertRecoveryRule>) => setRules(prev => prev.map((rule, i) => i === index ? { ...rule, ...patch } : rule));
+  const choose = (index: number, field: 'opening' | 'recovery', id: string) => { const selected = gallery.find(item => item.id === id); if (selected) update(index, { [field]: { ...selected } }); };
+  return <div className="space-y-4"><div><p className="font-medium" style={{ color: c.textSecondary }}>Recuperación automática y notificación diferida</p><p className="text-xs mt-1" style={{ color: c.textMuted }}>La apertura y recuperación deben corresponder al mismo router. Si reconecta dentro de la ventana, la alerta se resuelve con el mensaje indicado. La notificación diferida solo se muestra si no recupera a tiempo.</p></div>{rules.map((rule, index) => <div key={rule.id} className="card !p-4 space-y-3"><div className="flex gap-2"><input value={rule.name} onChange={e => update(index, { name: e.target.value })} className="input flex-1" placeholder="Nombre de regla" /><label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={rule.enabled} onChange={e => update(index, { enabled: e.target.checked })} />Activa</label><button onClick={() => setRules(prev => prev.filter((_, i) => i !== index))} className="btn-secondary text-xs">Eliminar</button></div><div className="grid grid-cols-1 md:grid-cols-2 gap-3"><label className="text-xs">Evento de apertura<select value={rule.opening.id} onChange={e => choose(index, 'opening', e.target.value)} className="input w-full mt-1"><option value="">Seleccionar desde Galería...</option>{gallery.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label className="text-xs">Evento de recuperación<select value={rule.recovery.id} onChange={e => choose(index, 'recovery', e.target.value)} className="input w-full mt-1"><option value="">Seleccionar desde Galería...</option>{gallery.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div><div className="grid grid-cols-1 md:grid-cols-3 gap-3"><label className="text-xs">Ventana de recuperación (segundos)<input type="number" min="1" value={rule.recovery_window_seconds} onChange={e => update(index, { recovery_window_seconds: Math.max(1, Number(e.target.value)) })} className="input w-full mt-1" /></label><label className="text-xs">Severidad<select value={rule.severity} onChange={e => update(index, { severity: e.target.value as 'warning' | 'critical' })} className="input w-full mt-1"><option value="warning">Advertencia</option><option value="critical">Crítico</option></select></label><label className="flex items-end gap-2 text-xs pb-2"><input type="checkbox" checked={rule.delay_notification} onChange={e => update(index, { delay_notification: e.target.checked })} />Diferir notificación</label></div>{rule.delay_notification && <label className="text-xs block">Tiempo de espera para alertar (segundos)<input type="number" min="0" value={rule.delay_seconds} onChange={e => update(index, { delay_seconds: Math.max(0, Number(e.target.value)) })} className="input w-full mt-1" /></label>}<label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={rule.force_recovery_report} onChange={e => update(index, { force_recovery_report: e.target.checked })} />Forzar informe de recuperación aunque coincida con filtros globales Popup/Telegram</label><label className="text-xs block">Mensaje al resolver automáticamente<textarea value={rule.resolution_comment} onChange={e => update(index, { resolution_comment: e.target.value })} className="input w-full mt-1" rows={2} /></label></div>)}<div className="flex gap-2"><button onClick={add} className="btn-secondary text-sm">Agregar regla</button><button onClick={async () => { try { const result = await settingsAPI.updateAlertRecoveryRules(rules); setRules(result.rules); toast.success('Reglas de recuperación guardadas'); } catch (e: any) { toast.error(e.message); } }} className="btn-primary text-sm">Guardar reglas</button></div></div>;
+}
+
 export function EventFiltersTab({ c }: { c: any }) {
-  const [subTab, setSubTab] = useState<'exclusion' | 'popup' | 'telegram' | 'storage'>('exclusion');
+  const [subTab, setSubTab] = useState<'exclusion' | 'popup' | 'telegram' | 'storage' | 'recovery'>('exclusion');
   const [exclusionFilters, setExclusionFilters] = useState<EventFilterRule[]>([]);
   const [popupFilters, setPopupFilters] = useState<EventFilterRule[]>([]);
   const [telegramFilters, setTelegramFilters] = useState<EventFilterRule[]>([]);
@@ -835,6 +845,7 @@ export function EventFiltersTab({ c }: { c: any }) {
     { id: 'popup' as const, label: 'Popup', desc: 'Qué eventos NO muestran popup en el Monitor' },
     { id: 'telegram' as const, label: 'Telegram', desc: 'Qué eventos NO envían notificación a Telegram' },
     { id: 'storage' as const, label: 'No guardar', desc: 'Qué eventos Syslog no se guardan en la base de datos' },
+    { id: 'recovery' as const, label: 'Recuperación', desc: 'Resolver alertas por evento de reconexión y diferir notificaciones' },
   ];
 
   return (
@@ -890,6 +901,8 @@ export function EventFiltersTab({ c }: { c: any }) {
             </>
           }
         />
+      ) : subTab === 'recovery' ? (
+        <AlertRecoveryRulesTab c={c} />
       ) : (
         <EventFilterRulesEditor
           value={storageFilters}

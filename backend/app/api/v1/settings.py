@@ -87,6 +87,7 @@ DEFAULTS = {
     "popup_exclusion_filters": "",
     "telegram_exclusion_filters": "",
     "event_classification_rules": "[]",
+    "alert_recovery_rules": "[]",
     "filter_gallery": "[]",
     "storage_exclusion_filters": "",
     "event_consolidation_minutes": "5",
@@ -694,6 +695,59 @@ def update_event_classification_rules(
                       "enabled": bool(rule.get("enabled", True))})
     _set(db, "event_classification_rules", json.dumps(clean))
     log_audit(db, current_user.username, "update", "settings", details={"event_classification_rules": len(clean)}, user_id=current_user.id, ip_address=req.client.host if req.client else None)
+    db.commit()
+    return {"rules": clean}
+
+
+def _clean_recovery_pattern(value: dict) -> dict | None:
+    if not isinstance(value, dict):
+        return None
+    pattern = str(value.get("pattern", "")).strip()
+    if not pattern:
+        return None
+    return {
+        "id": str(value.get("id", ""))[:100],
+        "name": str(value.get("name", ""))[:80],
+        "pattern": pattern[:300],
+        "mode": value.get("mode") if value.get("mode") in ("contains", "wildcard", "regex") else "contains",
+        "field": value.get("field") if value.get("field") in ("message", "topics", "any") else "message",
+        "enabled": True,
+    }
+
+
+@router.get("/alert-recovery-rules")
+def get_alert_recovery_rules(db: Session = Depends(get_db), _: User = Depends(require_permission("settings:edit"))):
+    from app.core.event_filter import load_json_setting
+    return {"rules": load_json_setting(db, "alert_recovery_rules")}
+
+
+@router.put("/alert-recovery-rules")
+def update_alert_recovery_rules(data: dict, req: Request, db: Session = Depends(get_db), current_user: User = Depends(require_permission("settings:edit"))):
+    rules = data.get("rules", [])
+    if not isinstance(rules, list):
+        raise HTTPException(status_code=400, detail="rules debe ser una lista")
+    clean = []
+    for rule in rules[:100]:
+        if not isinstance(rule, dict):
+            continue
+        opening, recovery = _clean_recovery_pattern(rule.get("opening")), _clean_recovery_pattern(rule.get("recovery"))
+        if not opening or not recovery:
+            continue
+        clean.append({
+            "id": str(rule.get("id", ""))[:100],
+            "name": str(rule.get("name", ""))[:80] or "Recuperación automática",
+            "enabled": bool(rule.get("enabled", True)),
+            "opening": opening,
+            "recovery": recovery,
+            "severity": rule.get("severity") if rule.get("severity") in ("warning", "critical") else "warning",
+            "recovery_window_seconds": min(86400, max(1, int(rule.get("recovery_window_seconds", 300) or 300))),
+            "delay_notification": bool(rule.get("delay_notification", False)),
+            "delay_seconds": min(86400, max(0, int(rule.get("delay_seconds", 0) or 0))),
+            "force_recovery_report": bool(rule.get("force_recovery_report", False)),
+            "resolution_comment": str(rule.get("resolution_comment", "Resuelta automáticamente al detectar recuperación."))[:500],
+        })
+    _set(db, "alert_recovery_rules", json.dumps(clean))
+    log_audit(db, current_user.username, "update", "settings", details={"alert_recovery_rules": len(clean)}, user_id=current_user.id, ip_address=req.client.host if req.client else None)
     db.commit()
     return {"rules": clean}
 

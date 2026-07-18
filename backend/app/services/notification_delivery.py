@@ -1,7 +1,8 @@
 """Best-effort asynchronous external delivery; event ingestion never waits for it."""
 import logging
 import threading
-from sqlalchemy import and_
+from datetime import datetime, timezone
+from sqlalchemy import and_, or_
 
 from app.core.database import SessionLocal
 from app.models.monitoring import Notification, NotificationDelivery
@@ -27,6 +28,9 @@ def _deliver_pending():
         ).filter(
             Notification.severity.in_(("critical", "warning", "recovery")),
             NotificationDelivery.id.is_(None),
+            Notification.telegram_required == True,
+            Notification.suppressed_at.is_(None),
+            or_(Notification.available_after.is_(None), Notification.available_after <= datetime.now(timezone.utc)),
         ).order_by(Notification.id).limit(100).all()
         for notification in pending:
             delivery = NotificationDelivery(notification_id=notification.id, channel="telegram")

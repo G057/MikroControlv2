@@ -366,6 +366,8 @@ export const settingsAPI = {
   updateEventClassificationRules: (rules: EventClassificationRule[]) => request<{ rules: EventClassificationRule[] }>('/settings/event-classification-rules', { method: 'PUT', body: JSON.stringify({ rules }) }),
   filterGallery: () => request<{ filters: EventFilterRule[] }>('/settings/filter-gallery'),
   updateFilterGallery: (filters: EventFilterRule[]) => request<{ filters: EventFilterRule[] }>('/settings/filter-gallery', { method: 'PUT', body: JSON.stringify({ filters }) }),
+  alertRecoveryRules: () => request<{ rules: AlertRecoveryRule[] }>('/settings/alert-recovery-rules'),
+  updateAlertRecoveryRules: (rules: AlertRecoveryRule[]) => request<{ rules: AlertRecoveryRule[] }>('/settings/alert-recovery-rules', { method: 'PUT', body: JSON.stringify({ rules }) }),
   storageFilters: () => request<{ filters: EventFilterRule[] }>('/settings/storage-filters'),
   updateStorageFilters: (filters: EventFilterRule[]) => request<{ filters: EventFilterRule[] }>('/settings/storage-filters', { method: 'PUT', body: JSON.stringify({ filters }) }),
   storageUsage: () => request<StorageUsage>('/settings/storage-usage'),
@@ -383,6 +385,19 @@ export interface EventFilterRule {
   field: 'message' | 'topics' | 'any';
   enabled: boolean;
   roles?: string[];
+}
+export interface AlertRecoveryRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  opening: EventFilterRule;
+  recovery: EventFilterRule;
+  severity: 'warning' | 'critical';
+  recovery_window_seconds: number;
+  delay_notification: boolean;
+  delay_seconds: number;
+  force_recovery_report: boolean;
+  resolution_comment: string;
 }
 export interface EventClassificationRule { id: string; name: string; pattern: string; field: 'message' | 'topics' | 'any'; mode: 'contains' | 'wildcard'; event_type: string; severity: 'critical' | 'warning' | 'info'; enabled: boolean; }
 

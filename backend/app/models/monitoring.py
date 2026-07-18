@@ -32,15 +32,20 @@ class Notification(Base):
     message = Column(Text, nullable=False)
     popup_required = Column(Boolean, nullable=False, default=False)
     sound_required = Column(Boolean, nullable=False, default=False)
+    telegram_required = Column(Boolean, nullable=False, default=True)
     status = Column(String(20), nullable=False, default="pending", index=True)
     occurrence_count = Column(Integer, nullable=False, default=1)
     deduplication_key = Column(String(255), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     acknowledged_at = Column(DateTime(timezone=True), nullable=True)
     acknowledged_by = Column(String(100), nullable=True)
+    available_after = Column(DateTime(timezone=True), nullable=True)
+    suppressed_at = Column(DateTime(timezone=True), nullable=True)
+    suppression_reason = Column(String(80), nullable=True)
 
     __table_args__ = (
         Index("ix_notifications_cursor", "id", "status"),
+        Index("ix_notifications_delivery_schedule", "suppressed_at", "available_after", "id"),
     )
 
 
