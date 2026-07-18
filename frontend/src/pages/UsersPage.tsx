@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { usersAPI, rolesAPI, type RoleItem } from '../services/api';
+import { usersAPI, rolesAPI, type RoleOption } from '../services/api';
 import type { User } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -84,7 +84,7 @@ export default function UsersPage() {
 }
 
 function UserForm({ user, onClose, onSaved, c }: { user: User | null; onClose: () => void; onSaved: () => void; c: any }) {
-  const [roles, setRoles] = useState<RoleItem[]>([]);
+  const [roles, setRoles] = useState<RoleOption[]>([]);
   const [form, setForm] = useState({
     username: user?.username || '', email: user?.email || '', full_name: user?.full_name || '',
     password: '', role: user?.role || 'tecnico_n1', is_active: user?.is_active ?? true,
@@ -92,10 +92,10 @@ function UserForm({ user, onClose, onSaved, c }: { user: User | null; onClose: (
   });
 
   useEffect(() => {
-    rolesAPI.list().then(r => {
+    rolesAPI.options().then(r => {
       setRoles(r);
       if (!form.role || !r.find(x => x.name === form.role)) {
-        const first = r.find(x => !x.is_system);
+        const first = r.find(x => x.name !== 'admin');
         setForm(f => ({ ...f, role: first ? first.name : 'tecnico_n1' }));
       }
     }).catch(() => {});
@@ -124,7 +124,7 @@ function UserForm({ user, onClose, onSaved, c }: { user: User | null; onClose: (
           <div>
             <label className="block text-sm mb-1" style={{ color: c.textSecondary }}>Rol *</label>
             <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-              {roles.map(r => <option key={r.name} value={r.name}>{r.name}{r.is_system ? ' (sistema)' : ''}</option>)}
+              {roles.map(r => <option key={r.name} value={r.name}>{r.name}</option>)}
             </select>
           </div>
           <div className="flex items-center gap-2">

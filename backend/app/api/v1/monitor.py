@@ -36,13 +36,24 @@ def get_notifications(
     rows = q.order_by(Notification.id.asc()).limit(limit + 1).all()
     has_more = len(rows) > limit
     rows = rows[:limit]
+    withheld = db.query(Notification.id).filter(
+        Notification.id > after_id,
+        Notification.status != "acknowledged",
+        Notification.suppressed_at.is_(None),
+        Notification.available_after > now,
+    )
+    if visible_ids is not None:
+        withheld = withheld.filter((Notification.router_id.is_(None)) | (Notification.router_id.in_(visible_ids)))
+    # Keep the cursor behind delayed rows. The frontend de-duplicates repeated
+    # immediate rows until the delayed notification becomes available.
+    next_cursor = after_id if withheld.first() else (rows[-1].id if rows else after_id)
     return {"items": [{"id": n.id, "eventLogId": n.event_log_id, "alertId": n.alert_id,
                         "routerId": n.router_id, "notificationType": n.notification_type,
                         "severity": n.severity, "title": n.title, "message": n.message,
                         "popupRequired": n.popup_required, "soundRequired": n.sound_required,
                         "status": n.status, "occurrenceCount": n.occurrence_count,
                         "createdAt": utc_iso(n.created_at)} for n in rows],
-            "nextCursor": rows[-1].id if rows else after_id, "hasMore": has_more,
+            "nextCursor": next_cursor, "hasMore": has_more,
             "serverTimestamp": datetime.now(timezone.utc).isoformat()}
 
 
@@ -56,7 +67,7 @@ def acknowledge_notification(
     if not item:
         raise HTTPException(status_code=404, detail="Notificación no encontrada")
     visible_ids = get_visible_router_ids(current_user, db)
-    if visible_ids is not None and item.router_id not in visible_ids:
+    if visible_ids is not None and item.router_id is not None and item.router_id not in visible_ids:
         raise HTTPException(status_code=404, detail="Notificación no encontrada")
     item.status = "acknowledged"
     item.acknowledged_at = datetime.now(timezone.utc)
@@ -143,6 +154,8 @@ def get_monitor(
     current_user: User = Depends(require_permission("monitor:view")),
 ):
     visible_ids = get_visible_router_ids(current_user, db)
+    from app.core.security import get_user_permissions
+    can_view_details = "routers:details" in get_user_permissions(current_user)
 
     q = db.query(
         Router.id, Router.name, Router.client_name,
@@ -165,7 +178,7 @@ def get_monitor(
         result.append({
             "id": r.id,
             "name": r.name,
-            "client_name": r.client_name,
+            "client_name": r.client_name if can_view_details else None,
             "is_online": r.is_online,
             "alert_count": ad.get("total", 0),
             "critical_count": ad.get("critical", 0),

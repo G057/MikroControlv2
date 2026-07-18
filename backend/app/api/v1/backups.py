@@ -11,6 +11,7 @@ from app.models.router import Router
 from app.schemas.template import BackupResponse
 from app.utils.audit import log_audit
 from app.core.router_access import get_visible_router_ids, require_visible_router
+from app.core.backup_utils import BACKUP_DIR
 
 router = APIRouter()
 
@@ -21,6 +22,17 @@ def _backup_in_scope(backup: Backup, current_user: User, db: Session) -> bool:
     if visible_ids is None:
         return True
     return backup.router_id in visible_ids
+
+
+def _backup_file_path(file_path: str) -> str:
+    backup_dir = os.path.realpath(BACKUP_DIR)
+    real = os.path.realpath(file_path)
+    try:
+        if os.path.commonpath([real, backup_dir]) != backup_dir:
+            raise HTTPException(status_code=400, detail="Ruta de backup inválida")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ruta de backup inválida")
+    return real
 
 
 @router.get("/", response_model=List[BackupResponse])
@@ -64,18 +76,14 @@ def create_backup(
 def restore_backup(
     backup_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("routers:edit")),
+    current_user: User = Depends(require_permission("routers:backup")),
 ):
     backup = db.query(Backup).filter(Backup.id == backup_id).first()
     if not backup:
         raise HTTPException(status_code=404, detail="Backup no encontrado")
-    # TODO: implement restore
-    return {"detail": "Función de restauración pendiente de implementar"}
-
-
-_BACKUP_DIR = os.path.normpath(os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "backups"
-))
+    if not _backup_in_scope(backup, current_user, db):
+        raise HTTPException(status_code=404, detail="Backup no encontrado")
+    raise HTTPException(status_code=501, detail="La restauración de backups de routers todavía no está implementada")
 
 
 @router.get("/{backup_id}/download")
@@ -91,9 +99,7 @@ def download_backup(
         raise HTTPException(status_code=404, detail="Backup no encontrado")
     if not backup.file_path or not os.path.isfile(backup.file_path):
         raise HTTPException(status_code=404, detail="Archivo de backup no encontrado en disco")
-    real = os.path.normpath(os.path.abspath(backup.file_path))
-    if os.path.commonpath([real, _BACKUP_DIR]) != _BACKUP_DIR:
-        raise HTTPException(status_code=400, detail="Ruta de backup inválida")
+    real = _backup_file_path(backup.file_path)
     return FileResponse(
         path=real,
         filename=backup.filename,
@@ -113,6 +119,13 @@ def delete_backup(
         raise HTTPException(status_code=404, detail="Backup no encontrado")
     if not _backup_in_scope(backup, current_user, db):
         raise HTTPException(status_code=404, detail="Backup no encontrado")
+    if backup.file_path:
+        real = _backup_file_path(backup.file_path)
+        if os.path.exists(real):
+            try:
+                os.remove(real)
+            except OSError as exc:
+                raise HTTPException(status_code=500, detail=f"No se pudo eliminar el archivo de backup: {exc}")
     name = backup.filename
     log_audit(db, current_user.username, "delete", "backup",
               backup.id, name, user_id=current_user.id,

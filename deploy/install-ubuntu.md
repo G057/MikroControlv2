@@ -65,13 +65,11 @@ deactivate
 ### 5. Variables de entorno
 ```bash
 SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(48))")
-REDIS_PASSWORD=$(openssl rand -base64 32)
 sudo install -o root -g www-data -m 640 /dev/null /opt/mikrocontrol/backend/.env
 sudo tee /opt/mikrocontrol/backend/.env >/dev/null <<EOF
 DATABASE_URL=postgresql://mikrocontrol:${DB_PASSWORD}@localhost:5432/mikrocontrol
 SECRET_KEY=${SECRET_KEY}
 CORS_ORIGINS=
-REDIS_URL=redis://:${REDIS_PASSWORD}@localhost:6379/0
 ROUTEROS_TLS_VERIFY=true
 EOF
 ```

@@ -315,6 +315,12 @@ export interface RoleItem {
   user_count: number;
 }
 
+export interface RoleOption {
+  id: number;
+  name: string;
+  description: string;
+}
+
 export interface PermissionGroup {
   group: string;
   permissions: { key: string; label: string; description: string }[];
@@ -322,6 +328,7 @@ export interface PermissionGroup {
 
 export const rolesAPI = {
   list: () => request<RoleItem[]>('/roles/'),
+  options: () => request<RoleOption[]>('/roles/options'),
   get: (id: number) => request<RoleItem>(`/roles/${id}`),
   catalog: () => request<{ groups: PermissionGroup[]; all: string[] }>('/roles/permissions/catalog'),
   create: (data: { name: string; description?: string; permissions: string[]; event_categories?: string[]; router_scope?: 'all' | 'selected'; router_ids?: number[]; router_group_ids?: number[] }) =>

@@ -16,11 +16,19 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("notifications", sa.Column("available_after", sa.DateTime(timezone=True), nullable=True))
-    op.add_column("notifications", sa.Column("suppressed_at", sa.DateTime(timezone=True), nullable=True))
-    op.add_column("notifications", sa.Column("suppression_reason", sa.String(length=80), nullable=True))
-    op.add_column("notifications", sa.Column("telegram_required", sa.Boolean(), nullable=False, server_default=sa.text("true")))
-    op.create_index("ix_notifications_delivery_schedule", "notifications", ["suppressed_at", "available_after", "id"])
+    bind = op.get_bind()
+    columns = {column["name"] for column in sa.inspect(bind).get_columns("notifications")}
+    if "available_after" not in columns:
+        op.add_column("notifications", sa.Column("available_after", sa.DateTime(timezone=True), nullable=True))
+    if "suppressed_at" not in columns:
+        op.add_column("notifications", sa.Column("suppressed_at", sa.DateTime(timezone=True), nullable=True))
+    if "suppression_reason" not in columns:
+        op.add_column("notifications", sa.Column("suppression_reason", sa.String(length=80), nullable=True))
+    if "telegram_required" not in columns:
+        op.add_column("notifications", sa.Column("telegram_required", sa.Boolean(), nullable=False, server_default=sa.text("true")))
+    indexes = {index["name"] for index in sa.inspect(bind).get_indexes("notifications")}
+    if "ix_notifications_delivery_schedule" not in indexes:
+        op.create_index("ix_notifications_delivery_schedule", "notifications", ["suppressed_at", "available_after", "id"])
 
 
 def downgrade() -> None:

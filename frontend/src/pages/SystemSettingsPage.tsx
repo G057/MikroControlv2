@@ -879,7 +879,6 @@ export function EventFiltersTab({ c }: { c: any }) {
         <EventFilterRulesEditor
           value={popupFilters}
           onChange={async next => { const r = await settingsAPI.updatePopupFilters(next); setPopupFilters(r.filters); toast.success('Filtros popup guardados'); }}
-          rolesOptions={roles}
           gallery={gallery}
           helper={
             <>
@@ -892,7 +891,6 @@ export function EventFiltersTab({ c }: { c: any }) {
         <EventFilterRulesEditor
           value={telegramFilters}
           onChange={async next => { const r = await settingsAPI.updateTelegramFilters(next); setTelegramFilters(r.filters); toast.success('Filtros telegram guardados'); }}
-          rolesOptions={roles}
           gallery={gallery}
           helper={
             <>
@@ -907,7 +905,6 @@ export function EventFiltersTab({ c }: { c: any }) {
         <EventFilterRulesEditor
           value={storageFilters}
           onChange={async next => { const r = await settingsAPI.updateStorageFilters(next); setStorageFilters(r.filters); toast.success('Filtros de almacenamiento guardados'); }}
-          rolesOptions={roles}
           gallery={gallery}
           helper={<><p className="font-medium mb-1" style={{ color: c.textSecondary }}>No guardar en base de datos</p><p>Los Syslog que coincidan no se persisten ni generan alerta, popup o Telegram. La regla inicial excluye los login/logout API de cuentas técnicas de MikroControl.</p></>}
         />

@@ -8,13 +8,12 @@ from app.core.database import get_db, engine, settings
 from app.core.security import get_current_user, require_permission
 from app.models.user import User
 from app.api.v1.settings import get_setting, _set, DEFAULTS
+from app.core.backup_utils import BACKUP_DIR, should_run_backup_schedule
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-BACKUP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "backups")
-BACKUP_DIR = os.path.normpath(BACKUP_DIR)
 _restart_timer = None
 _restore_lock = threading.Lock()
 
@@ -42,6 +41,18 @@ def _ensure_backup_dir():
     os.makedirs(BACKUP_DIR, exist_ok=True)
 
 
+def _backup_path(filename: str) -> str:
+    """Resolve a requested backup only when it remains inside the backup directory."""
+    backup_dir = os.path.realpath(BACKUP_DIR)
+    candidate = os.path.realpath(os.path.join(backup_dir, filename))
+    try:
+        if os.path.commonpath([backup_dir, candidate]) != backup_dir:
+            raise HTTPException(404, "Archivo no encontrado")
+    except ValueError:
+        raise HTTPException(404, "Archivo no encontrado")
+    return candidate
+
+
 def _list_backup_files():
     _ensure_backup_dir()
     files = []
@@ -63,7 +74,7 @@ def _list_backup_files():
 
 
 @router.get("/")
-def list_backups(current_user: User = Depends(require_permission("settings:view"))):
+def list_backups(current_user: User = Depends(require_permission("settings:edit"))):
     return _list_backup_files()
 
 
@@ -92,10 +103,10 @@ def create_backup(current_user: User = Depends(require_permission("settings:edit
 
 
 @router.get("/download/{filename}")
-def download_backup(filename: str, current_user: User = Depends(require_permission("settings:view"))):
+def download_backup(filename: str, current_user: User = Depends(require_permission("settings:edit"))):
     _ensure_backup_dir()
-    safe = os.path.normpath(os.path.join(BACKUP_DIR, filename))
-    if not safe.startswith(BACKUP_DIR) or not os.path.isfile(safe):
+    safe = _backup_path(filename)
+    if not os.path.isfile(safe):
         raise HTTPException(404, "Archivo no encontrado")
     return FileResponse(safe, filename=filename, media_type="application/octet-stream")
 
@@ -109,8 +120,8 @@ def restore_backup(filename: str, current_user: User = Depends(require_permissio
 
     try:
         _ensure_backup_dir()
-        safe = os.path.normpath(os.path.join(BACKUP_DIR, filename))
-        if not safe.startswith(BACKUP_DIR) or not os.path.isfile(safe):
+        safe = _backup_path(filename)
+        if not os.path.isfile(safe):
             raise HTTPException(404, "Archivo no encontrado")
 
         conn = _pg_conn()
@@ -149,8 +160,8 @@ def restore_backup(filename: str, current_user: User = Depends(require_permissio
 @router.delete("/{filename}")
 def delete_backup(filename: str, current_user: User = Depends(require_permission("settings:edit"))):
     _ensure_backup_dir()
-    safe = os.path.normpath(os.path.join(BACKUP_DIR, filename))
-    if not safe.startswith(BACKUP_DIR) or not os.path.isfile(safe):
+    safe = _backup_path(filename)
+    if not os.path.isfile(safe):
         raise HTTPException(404, "Archivo no encontrado")
     os.remove(safe)
     return {"message": f"Backup {filename} eliminado"}
@@ -161,9 +172,13 @@ def delete_backups_bulk(data: dict, current_user: User = Depends(require_permiss
     filenames = data.get("filenames", [])
     deleted = []
     not_found = []
+    _ensure_backup_dir()
     for fname in filenames:
-        safe = os.path.normpath(os.path.join(BACKUP_DIR, fname))
-        if safe.startswith(BACKUP_DIR) and os.path.isfile(safe):
+        try:
+            safe = _backup_path(fname) if isinstance(fname, str) else None
+        except HTTPException:
+            safe = None
+        if safe and os.path.isfile(safe):
             os.remove(safe)
             deleted.append(fname)
         else:
@@ -182,22 +197,7 @@ _backup_scheduler_active = False
 
 
 def _should_run_scheduled(days_str: str, time_str: str) -> bool:
-    from datetime import datetime as dt
-    now = dt.now()
-    if days_str:
-        selected = set(d.strip() for d in days_str.split(",") if d.strip())
-        if str(now.weekday()) not in selected:
-            return False
-    if time_str:
-        try:
-            h, m = time_str.split(":")
-            target = now.replace(hour=int(h), minute=int(m), second=0, microsecond=0)
-            diff = (now - target).total_seconds()
-            if diff < 0 or diff >= 120:
-                return False
-        except Exception:
-            pass
-    return True
+    return should_run_backup_schedule(days_str, time_str)
 
 
 def _cleanup_old_backups():
@@ -248,7 +248,6 @@ def _cleanup_old_backups():
 def _backup_scheduler_loop():
     global _backup_scheduler_active
     _backup_scheduler_active = True
-    last = 0
     while True:
         time.sleep(60)
         try:
@@ -263,20 +262,21 @@ def _backup_scheduler_loop():
             days = ""
             sched_time = "03:00"
 
+        latest = max((os.path.getmtime(path) for path in glob.glob(os.path.join(BACKUP_DIR, "*.dump")) + glob.glob(os.path.join(BACKUP_DIR, "*.sql"))), default=0)
         now = time.time()
         do_backup = False
 
         if days:
-            if now - last >= 3600:
+            # A file created today is the durable daily marker across restarts.
+            if datetime.fromtimestamp(latest).date() != datetime.now().date():
                 do_backup = _should_run_scheduled(days, sched_time)
         elif interval > 0:
-            if now - last >= interval * 3600:
+            if now - latest >= interval * 3600:
                 do_backup = True
 
         if do_backup:
             try:
                 _do_create_backup()
-                last = now
             except Exception:
                 pass
 

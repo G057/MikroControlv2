@@ -143,16 +143,24 @@ def _apply_recovery_rules(db, item, event, create_notification: bool):
                         alert.resolution_comment, f"{key}:recovery:{event.id}", popup_required=popup_required, telegram_required=telegram_required,
                     )
                 return alert, notification, True
-            # A recovery pattern is informational even when its matching alert
-            # already expired or was resolved manually.
-            return None, None, True
+            # Let generic recovery logic handle unmatched, expired, or manually
+            # resolved incidents instead of swallowing the event.
+            continue
 
         if event_matches_filter(item.message, item.topics, rule.get("opening", {})):
             alert = _active_alert(db, item.router_id, key)
             if alert:
-                alert.occurrence_count += 1
-                alert.last_seen = now
-                return alert, None, True
+                window = timedelta(seconds=max(1, int(rule.get("recovery_window_seconds", 300))))
+                if alert.first_seen and now - alert.first_seen > window:
+                    alert.is_resolved = True
+                    alert.resolved_at = now
+                    alert.resolved_by = "automatic"
+                    alert.resolution_comment = "Incidente anterior vencido al detectar una nueva desconexión."
+                    alert = None
+                else:
+                    alert.occurrence_count += 1
+                    alert.last_seen = now
+                    return alert, None, True
             severity = rule.get("severity", "warning")
             alert = Alert(
                 router_id=item.router_id, alert_type=f"auto_recovery_{rule['id']}", severity=severity,
@@ -198,6 +206,10 @@ def ingest_event(db, item: NormalizedEvent, create_alert: bool = True, create_no
     if repeated:
         repeated.last_seen = item.received_timestamp
         repeated.occurrence_count = (repeated.occurrence_count or 1) + 1
+        active = _active_alert(db, item.router_id, deduplication_key)
+        if active:
+            active.last_seen = item.received_timestamp
+            active.occurrence_count = (active.occurrence_count or 1) + 1
         return repeated, False, None, None
     existing = db.query(EventLog).filter(EventLog.canonical_hash == canonical_hash).first()
     if existing:

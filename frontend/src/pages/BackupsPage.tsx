@@ -8,10 +8,10 @@ import toast from 'react-hot-toast';
 import { formatDateTime } from '../utils/date';
 
 const WEEKDAYS = [
-  { value: '0', label: 'Domingo' }, { value: '1', label: 'Lunes' },
-  { value: '2', label: 'Martes' }, { value: '3', label: 'Miércoles' },
-  { value: '4', label: 'Jueves' }, { value: '5', label: 'Viernes' },
-  { value: '6', label: 'Sábado' },
+  { value: '0', label: 'Lunes' }, { value: '1', label: 'Martes' },
+  { value: '2', label: 'Miércoles' }, { value: '3', label: 'Jueves' },
+  { value: '4', label: 'Viernes' }, { value: '5', label: 'Sábado' },
+  { value: '6', label: 'Domingo' },
 ];
 
 export default function BackupsPage() {
@@ -121,7 +121,7 @@ export default function BackupsPage() {
                     style={{ background: !useDays ? c.accent : c.bgHover, color: !useDays ? '#fff' : c.textSecondary, border: `1px solid ${!useDays ? c.accent : c.border}` }}>
                     Intervalo (horas)
                   </button>
-                  <button onClick={() => setCfg({...cfg, router_backup_schedule_days: '1'})}
+                  <button onClick={() => setCfg({...cfg, router_backup_schedule_days: '0'})}
                     className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors"
                     style={{ background: useDays ? c.accent : c.bgHover, color: useDays ? '#fff' : c.textSecondary, border: `1px solid ${useDays ? c.accent : c.border}` }}>
                     Días y hora
@@ -157,10 +157,7 @@ export default function BackupsPage() {
                   </div>
                   <div>
                     <label className="text-xs font-medium block mb-1" style={{ color: c.textSecondary }}>Hora (HH:MM, formato 24h)</label>
-                    <input type="text" value={cfg.router_backup_schedule_time} onChange={e => {
-                      const v = e.target.value;
-                      if (/^\d{0,2}:?\d{0,2}$/.test(v)) setCfg({...cfg, router_backup_schedule_time: v});
-                    }} placeholder="03:00"
+                    <input type="time" value={cfg.router_backup_schedule_time} onChange={e => setCfg({...cfg, router_backup_schedule_time: e.target.value})}
                       className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={{ background: c.bgInput, color: c.textPrimary, border: `1px solid ${c.border}` }} />
                   </div>
                 </>

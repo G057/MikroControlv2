@@ -18,6 +18,8 @@ _VIEW_PERMS = list(ROUTER_VIEW_PERMS)
 # Campos técnicos sensibles: se ocultan a roles sin 'routers:view_sensitive'.
 _SENSITIVE_FIELDS = ["ip_address", "hostname", "identity", "mac_address", "serial_number", "model",
                       "api_username", "wg_address", "wg_endpoint", "wg_public_key"]
+_CUSTOMER_PII_FIELDS = ["address", "city", "client_name", "client_phone", "client_email", "notes"]
+_CUSTOMER_LOCATION_FIELDS = ["latitude", "longitude"]
 _MASK = "••••••"
 
 
@@ -29,6 +31,23 @@ def _mask_sensitive(resp, current_user):
         if getattr(resp, f, None) is not None:
             setattr(resp, f, _MASK)
     return resp
+
+
+def _mask_customer_pii(resp, current_user):
+    if "routers:details" in get_user_permissions(current_user):
+        return resp
+    for f in _CUSTOMER_PII_FIELDS:
+        if getattr(resp, f, None) is not None:
+            setattr(resp, f, _MASK)
+    for f in _CUSTOMER_LOCATION_FIELDS:
+        if getattr(resp, f, None) is not None:
+            setattr(resp, f, None)
+    return resp
+
+
+def _router_response(router_obj, current_user):
+    resp = RouterResponse.model_validate(router_obj)
+    return _mask_customer_pii(_mask_sensitive(resp, current_user), current_user)
 
 
 @router.get("/", response_model=List[RouterResponse])
@@ -57,7 +76,7 @@ def list_routers(
     if visible_ids is not None:
         query = query.filter(Router.id.in_(visible_ids))
     routers = query.order_by(Router.name).all()
-    return [_mask_sensitive(RouterResponse.model_validate(r), current_user) for r in routers]
+    return [_router_response(r, current_user) for r in routers]
 
 
 @router.post("/", response_model=RouterResponse)
@@ -103,7 +122,7 @@ def create_router(
               {"hostname": router_obj.hostname},
               current_user.id, req.client.host if req.client else None)
     db.commit()
-    return RouterResponse.model_validate(router_obj)
+    return _router_response(router_obj, current_user)
 
 
 @router.get("/{router_id}", response_model=RouterResponse)
@@ -113,7 +132,7 @@ def get_router(
     current_user: User = Depends(require_any_permission(*_VIEW_PERMS)),
 ):
     r = require_visible_router(router_id, current_user, db)
-    return _mask_sensitive(RouterResponse.model_validate(r), current_user)
+    return _router_response(r, current_user)
 
 
 @router.put("/{router_id}", response_model=RouterResponse)
@@ -149,7 +168,7 @@ def update_router(
               r.id, r.name, {"fields": list(data.model_dump(exclude_unset=True).keys())},
               current_user.id, req.client.host if req.client else None)
     db.commit()
-    return RouterResponse.model_validate(r)
+    return _router_response(r, current_user)
 
 
 @router.delete("/{router_id}")

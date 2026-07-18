@@ -2,9 +2,9 @@ import asyncio, json, logging, re
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, func
+from sqlalchemy import desc
 from app.core.database import get_db
-from app.core.security import get_current_user, get_user_permissions, require_permission
+from app.core.security import get_user_permissions, require_permission
 from app.models.user import User
 from app.models.event_log import EventLog
 from app.models.alert import Alert
@@ -239,7 +239,7 @@ def counts_by_severity(
     search: Optional[str] = None,
     is_resolved: Optional[bool] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("events:view")),
 ):
     allowed_cats = event_filter.load_role_event_categories(current_user.role, db)
     is_admin = (current_user.role == "admin")
@@ -398,8 +398,14 @@ def explore_events(
         q = q.filter(EventLog.first_seen >= start)
     if end:
         q = q.filter(EventLog.first_seen < end)
-    total = q.count()
-    rows = q.order_by(EventLog.first_seen.desc(), EventLog.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    allowed_cats = event_filter.load_role_event_categories(current_user.role, db)
+    see_all = current_user.role == "admin" or "*" in allowed_cats
+    excl_filters = event_filter.filter_rules_for_role(event_filter.load_exclusion_filters(db), current_user.role)
+    rows = [event for event in q.order_by(EventLog.first_seen.desc(), EventLog.id.desc()).all()
+            if not event_filter.is_event_excluded(event.message, event.topics, excl_filters)
+            and (not allowed_cats or see_all or event_filter.classify_category(event.topics) in allowed_cats)]
+    total = len(rows)
+    rows = rows[(page - 1) * page_size:page * page_size]
     return {"total": total, "page": page, "pageSize": page_size, "items": [
         {"id": e.id, "routerId": e.router_id, "routerName": e.router_name, "severity": e.severity,
          "eventType": e.event_type, "topics": e.topics, "message": e.message,
@@ -432,18 +438,25 @@ def event_report(
         q = q.filter(EventLog.first_seen >= start)
     if end:
         q = q.filter(EventLog.first_seen < end)
-    summary = dict(q.with_entities(EventLog.severity, func.count(EventLog.id)).group_by(EventLog.severity).all())
-    bucket = func.date_trunc("day", EventLog.first_seen).label("bucket")
-    rows = q.with_entities(bucket, EventLog.severity, func.count(EventLog.id)).group_by(bucket, EventLog.severity).order_by(bucket).all()
+    allowed_cats = event_filter.load_role_event_categories(current_user.role, db)
+    see_all = current_user.role == "admin" or "*" in allowed_cats
+    excl_filters = event_filter.filter_rules_for_role(event_filter.load_exclusion_filters(db), current_user.role)
+    events = [event for event in q.all()
+              if not event_filter.is_event_excluded(event.message, event.topics, excl_filters)
+              and (not allowed_cats or see_all or event_filter.classify_category(event.topics) in allowed_cats)]
+    summary = {}
     series = {}
-    for day, sev, count in rows:
-        key = utc_iso(day)[:10]
-        target = sev if sev in ("critical", "warning", "info") else "info"
-        series.setdefault(key, {"date": key, "critical": 0, "warning": 0, "info": 0})[target] += count
+    for event in events:
+        summary[event.severity] = summary.get(event.severity, 0) + 1
+        key = utc_iso(event.first_seen)[:10]
+        severity_key = event.severity if event.severity in ("critical", "warning", "info") else "info"
+        series.setdefault(key, {"date": key, "critical": 0, "warning": 0, "info": 0})[severity_key] += 1
     period_days = max(1, ((end or datetime.now(timezone.utc)) - (start or (end or datetime.now(timezone.utc)))).days)
     if not start and not end:
         period_days = max(1, len(series))
-    return {"router": {"id": router_row.id, "name": router_row.name, "clientName": router_row.client_name},
+    can_view_details = "routers:details" in get_user_permissions(current_user)
+    return {"router": {"id": router_row.id, "name": router_row.name,
+                       "clientName": router_row.client_name if can_view_details else None},
             "summary": {"total": sum(summary.values()), "critical": summary.get("critical", 0), "warning": summary.get("warning", 0), "info": summary.get("info", 0)},
             "series": list(series.values()), "from": date_from, "to": date_to, "periodDays": period_days}
 

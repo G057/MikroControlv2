@@ -101,8 +101,14 @@ DEFAULT_STORAGE_FILTERS = [
 
 
 def load_storage_filters(db: Session) -> list:
-    rules = load_json_setting(db, "storage_exclusion_filters")
-    return rules if rules else DEFAULT_STORAGE_FILTERS
+    row = db.query(SystemSetting).filter(SystemSetting.key == "storage_exclusion_filters").first()
+    if not row or not row.value:
+        return DEFAULT_STORAGE_FILTERS
+    try:
+        rules = json.loads(row.value)
+        return rules if isinstance(rules, list) else DEFAULT_STORAGE_FILTERS
+    except (json.JSONDecodeError, TypeError):
+        return DEFAULT_STORAGE_FILTERS
 
 
 def event_matches_filter(message: str, topics: str, filt: dict) -> bool:

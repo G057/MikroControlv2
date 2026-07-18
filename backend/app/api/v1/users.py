@@ -50,6 +50,7 @@ def create_user(
         hashed_password=get_password_hash(data.password),
         role=data.role,
         is_active=data.is_active,
+        session_timeout_minutes=data.session_timeout_minutes,
     )
     db.add(user)
     db.commit()
@@ -87,6 +88,19 @@ def update_user(
 
     update_data = data.model_dump(exclude_unset=True)
 
+    if "username" in update_data and update_data["username"] != user.username:
+        existing = db.query(User).filter(
+            User.username == update_data["username"], User.id != user.id
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Username ya existe")
+    if "email" in update_data and update_data["email"] != user.email:
+        existing = db.query(User).filter(
+            User.email == update_data["email"], User.id != user.id
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Email ya existe")
+
     new_role = update_data.get("role")
     if new_role is not None and new_role != user.role:
         if user.id == current_user.id:
@@ -107,6 +121,12 @@ def update_user(
         user.token_version = (user.token_version or 0) + 1
     else:
         update_data.pop("password", None)
+
+    if (
+        "session_timeout_minutes" in update_data
+        and update_data["session_timeout_minutes"] != user.session_timeout_minutes
+    ):
+        user.token_version = (user.token_version or 0) + 1
 
     for key, value in update_data.items():
         setattr(user, key, value)

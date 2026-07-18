@@ -134,7 +134,7 @@ MikroControl/
 
 ## API REST
 
-Documentación Swagger disponible en: `http://localhost/api/docs`
+Swagger está disponible en desarrollo con `DEBUG=true`: `http://localhost/api/docs`. En producción la documentación OpenAPI está deshabilitada.
 
 ### Endpoints principales
 

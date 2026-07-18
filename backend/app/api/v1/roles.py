@@ -60,6 +60,12 @@ class RoleResponse(BaseModel):
         from_attributes = True
 
 
+class RoleOption(BaseModel):
+    id: int
+    name: str
+    description: str
+
+
 def _serialize(role: Role, user_count: int) -> RoleResponse:
     return RoleResponse(
         id=role.id,
@@ -84,6 +90,23 @@ def permission_catalog(_: User = Depends(require_permission("roles:manage"))):
         ],
         "all": ALL_PERMISSIONS,
     }
+
+
+@router.get("/options", response_model=List[RoleOption])
+def list_assignable_roles(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("users:edit")),
+):
+    roles = db.query(Role).order_by(Role.name).all()
+    if current_user.role == "admin":
+        return [RoleOption(id=role.id, name=role.name, description=role.description) for role in roles]
+
+    actor_permissions = set(get_user_permissions(current_user))
+    return [
+        RoleOption(id=role.id, name=role.name, description=role.description)
+        for role in roles
+        if role.name != "admin" and set(role.get_permissions()).issubset(actor_permissions)
+    ]
 
 
 @router.get("/", response_model=List[RoleResponse])

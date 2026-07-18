@@ -27,6 +27,7 @@ from app.models.event_log import EventLog
 from app.models.router_history import RouterHistory
 from app.models.audit import AuditLog
 from app.utils.audit import log_audit
+from app.core.backup_utils import BACKUP_DIR, validate_backup_schedule
 
 router = APIRouter()
 
@@ -34,7 +35,6 @@ MANAGED_SERVICES = {
     "mikrocontrol": "Backend MikroControl",
     "nginx": "Nginx",
     "postgresql": "PostgreSQL",
-    "redis-server": "Redis",
 }
 
 DEFAULTS = {
@@ -247,7 +247,7 @@ def get_services(
     except Exception:
         database_size, database_connections = 0, 0
     backup_size = 0
-    for root, _, files in os.walk("/opt/mikrocontrol/backups"):
+    for root, _, files in os.walk(BACKUP_DIR):
         for filename in files:
             try:
                 backup_size += os.path.getsize(os.path.join(root, filename))
@@ -272,7 +272,7 @@ def restart_service(
     service_name: str,
     current_user: User = Depends(require_permission("settings:edit")),
 ):
-    if service_name not in MANAGED_SERVICES or service_name == "redis-server":
+    if service_name not in MANAGED_SERVICES:
         raise HTTPException(status_code=404, detail="Servicio no administrable")
     try:
         # The systemd policy grants www-data only these exact restart commands.
@@ -340,6 +340,21 @@ def update_settings(
     current_user: User = Depends(require_permission("settings:edit")),
 ):
     updates = data.model_dump(exclude_unset=True)
+    for days_key, time_key in (
+        ("backup_schedule_days", "backup_schedule_time"),
+        ("router_backup_schedule_days", "router_backup_schedule_time"),
+    ):
+        if days_key in updates or time_key in updates:
+            current_days = get_setting(db, days_key, DEFAULTS[days_key])
+            current_time = get_setting(db, time_key, DEFAULTS[time_key])
+            try:
+                days, schedule_time = validate_backup_schedule(
+                    updates.get(days_key, current_days), updates.get(time_key, current_time)
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc))
+            updates[days_key] = days
+            updates[time_key] = schedule_time
     for key, value in updates.items():
         if value is None:
             continue
@@ -587,7 +602,8 @@ def update_event_filters(
             "mode": f.get("mode", "contains") if f.get("mode") in ("contains", "wildcard", "regex") else "contains",
             "field": f.get("field", "message") if f.get("field") in ("message", "topics", "any") else "message",
             "enabled": bool(f.get("enabled", True)),
-            "roles": [str(r) for r in (f.get("roles") or []) if isinstance(r, str)][:50],
+            # Delivery/storage are global system behaviors, not per-viewer rules.
+            "roles": [],
         })
     _set(db, "event_exclusion_filters", json.dumps(clean))
     log_audit(db, current_user.username, "update", "settings",
@@ -681,6 +697,7 @@ def update_event_classification_rules(
     if not isinstance(rules, list):
         raise HTTPException(status_code=400, detail="rules debe ser una lista")
     clean = []
+    seen_ids = set()
     for rule in rules[:100]:
         if not isinstance(rule, dict):
             continue
@@ -732,17 +749,28 @@ def update_alert_recovery_rules(data: dict, req: Request, db: Session = Depends(
             continue
         opening, recovery = _clean_recovery_pattern(rule.get("opening")), _clean_recovery_pattern(rule.get("recovery"))
         if not opening or not recovery:
-            continue
+            raise HTTPException(status_code=400, detail="Cada regla requiere evento de apertura y recuperación")
+        rule_id = str(rule.get("id", "")).strip()[:100]
+        if not rule_id or rule_id in seen_ids:
+            raise HTTPException(status_code=400, detail="Cada regla de recuperación requiere un ID único")
+        if opening["pattern"].lower() == recovery["pattern"].lower() and opening["field"] == recovery["field"]:
+            raise HTTPException(status_code=400, detail="Apertura y recuperación no pueden usar el mismo patrón")
+        try:
+            recovery_window = min(86400, max(1, int(rule.get("recovery_window_seconds", 300) or 300)))
+            delay_seconds = min(86400, max(0, int(rule.get("delay_seconds", 0) or 0)))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Los tiempos de recuperación deben ser números enteros")
+        seen_ids.add(rule_id)
         clean.append({
-            "id": str(rule.get("id", ""))[:100],
+            "id": rule_id,
             "name": str(rule.get("name", ""))[:80] or "Recuperación automática",
             "enabled": bool(rule.get("enabled", True)),
             "opening": opening,
             "recovery": recovery,
             "severity": rule.get("severity") if rule.get("severity") in ("warning", "critical") else "warning",
-            "recovery_window_seconds": min(86400, max(1, int(rule.get("recovery_window_seconds", 300) or 300))),
+            "recovery_window_seconds": recovery_window,
             "delay_notification": bool(rule.get("delay_notification", False)),
-            "delay_seconds": min(86400, max(0, int(rule.get("delay_seconds", 0) or 0))),
+            "delay_seconds": delay_seconds,
             "force_recovery_report": bool(rule.get("force_recovery_report", False)),
             "resolution_comment": str(rule.get("resolution_comment", "Resuelta automáticamente al detectar recuperación."))[:500],
         })

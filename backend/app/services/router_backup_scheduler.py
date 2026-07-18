@@ -4,6 +4,7 @@ from app.core.database import SessionLocal
 from app.models.router import Router
 from app.models.backup import Backup
 from app.api.v1.settings import get_setting, DEFAULTS
+from app.core.backup_utils import BACKUP_DIR, should_run_backup_schedule
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +20,7 @@ DEFAULT_BACKUP_TYPE = "export"
 
 
 def _router_backup_dir():
-    base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    return os.path.join(base, "backups")
+    return BACKUP_DIR
 
 
 def _cleanup_old_backups():
@@ -83,7 +83,6 @@ def _cleanup_old_backups():
 
 
 def _scheduler_loop():
-    last = 0.0
     while True:
         time.sleep(60)
         try:
@@ -101,41 +100,36 @@ def _scheduler_loop():
             sched_time = "03:00"
             backup_type = DEFAULT_BACKUP_TYPE
 
+        try:
+            db = SessionLocal()
+            try:
+                latest = db.query(Backup.created_at).order_by(Backup.created_at.desc()).limit(1).scalar()
+            finally:
+                db.close()
+        except Exception:
+            latest = None
+        latest_ts = latest.timestamp() if latest else 0
         now = time.time()
         do_backup = False
 
         if days_str:
-            if now - last >= 3600:
+            # A database record is a durable daily marker across restarts.
+            if not latest or datetime.fromtimestamp(latest_ts).date() != datetime.now().date():
                 do_backup = _should_run(days_str, sched_time)
         elif interval > 0:
-            if now - last >= interval * 3600:
+            if now - latest_ts >= interval * 3600:
                 do_backup = True
 
         if do_backup:
             try:
                 _backup_all_routers(backup_type)
-                last = now
                 _cleanup_old_backups()
             except Exception as e:
                 logger.error("Error en respaldo automático de routers: %s", e)
 
 
 def _should_run(days_str: str, time_str: str) -> bool:
-    now = datetime.now()
-    if days_str:
-        selected = set(d.strip() for d in days_str.split(",") if d.strip())
-        if str(now.weekday()) not in selected:
-            return False
-    if time_str:
-        try:
-            h, m = time_str.split(":")
-            target = now.replace(hour=int(h), minute=int(m), second=0, microsecond=0)
-            diff = (now - target).total_seconds()
-            if diff < 0 or diff >= 120:
-                return False
-        except Exception:
-            pass
-    return True
+    return should_run_backup_schedule(days_str, time_str)
 
 
 def _backup_all_routers(backup_type: str):

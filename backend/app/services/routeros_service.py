@@ -752,7 +752,8 @@ def create_router_backup(router, backup_type="binary"):
         ext = "rsc" if backup_type != "binary" else "backup"
         filename = f"{router.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}"
 
-        backup_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "backups")
+        from app.core.backup_utils import BACKUP_DIR
+        backup_dir = BACKUP_DIR
         os.makedirs(backup_dir, exist_ok=True)
         filepath = os.path.join(backup_dir, filename)
 

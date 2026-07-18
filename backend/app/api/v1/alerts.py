@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 from typing import List, Optional
 from pydantic import BaseModel
 from app.core.database import get_db
@@ -9,6 +8,8 @@ from app.core.router_access import get_visible_router_ids
 from app.models.user import User
 from app.models.alert import Alert, AlertRule
 from app.schemas.template import AlertRuleCreate, AlertRuleResponse, AlertResponse
+from app.core import event_filter
+from app.utils.audit import log_audit
 
 router = APIRouter()
 
@@ -17,21 +18,34 @@ class ResolveRequest(BaseModel):
     comment: Optional[str] = None
 
 
+def _visible_alerts(query, current_user, db):
+    allowed_cats = event_filter.load_role_event_categories(current_user.role, db)
+    see_all = current_user.role == "admin" or "*" in allowed_cats
+    filters = event_filter.filter_rules_for_role(event_filter.load_exclusion_filters(db), current_user.role)
+    for alert in query.all():
+        message = alert.title + (f" — {alert.message}" if alert.message else "")
+        if event_filter.is_event_excluded(message, alert.alert_type, filters):
+            continue
+        if allowed_cats and not see_all and event_filter.classify_alert_category(alert.alert_type) not in allowed_cats:
+            continue
+        yield alert
+
+
 @router.get("/unresolved-count")
 def unresolved_count(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("events:view")),
 ):
     visible_ids = get_visible_router_ids(current_user, db)
-    count_q = db.query(func.count(Alert.id)).filter(Alert.is_resolved == False)
-    sev_q = db.query(Alert.severity, func.count(Alert.id)).filter(Alert.is_resolved == False)
+    count_q = db.query(Alert).filter(Alert.is_resolved == False)
     if visible_ids is not None:
         count_q = count_q.filter((Alert.router_id.is_(None)) | (Alert.router_id.in_(visible_ids)))
-        sev_q = sev_q.filter((Alert.router_id.is_(None)) | (Alert.router_id.in_(visible_ids)))
-    count = count_q.scalar()
-    by_severity = dict(sev_q.group_by(Alert.severity).all())
+    alerts = list(_visible_alerts(count_q, current_user, db))
+    by_severity = {}
+    for alert in alerts:
+        by_severity[alert.severity] = by_severity.get(alert.severity, 0) + 1
     return {
-        "total": count,
+        "total": len(alerts),
         "critical": by_severity.get("critical", 0),
         "warning": by_severity.get("warning", 0),
         "info": by_severity.get("info", 0),
@@ -59,7 +73,7 @@ def list_alerts(
         query = query.filter(Alert.router_id == router_id)
     if visible_ids is not None:
         query = query.filter((Alert.router_id.is_(None)) | (Alert.router_id.in_(visible_ids)))
-    return [AlertResponse.model_validate(a) for a in query.order_by(Alert.created_at.desc()).limit(500).all()]
+    return [AlertResponse.model_validate(a) for a in _visible_alerts(query.order_by(Alert.created_at.desc()).limit(500), current_user, db)]
 
 
 @router.put("/{alert_id}/resolve")
@@ -81,6 +95,8 @@ def resolve_alert(
     alert.resolved_by = current_user.username
     if body and body.comment:
         alert.resolution_comment = body.comment
+    log_audit(db, current_user.username, "resolve", "alert", alert.id, alert.title,
+              {"comment": alert.resolution_comment}, current_user.id)
     db.commit()
     return {"detail": "Alerta resuelta"}
 
@@ -104,6 +120,7 @@ def resolve_all_alerts(
         "resolved_by": current_user.username,
         "resolution_comment": comment,
     })
+    log_audit(db, current_user.username, "resolve_all", "alert", details={"comment": comment}, user_id=current_user.id)
     db.commit()
     return {"detail": "Todas las alertas resueltas"}
 

@@ -7,7 +7,7 @@ app/api/v1/settings.py para mantener un único comportamiento.
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-MIN_PASSWORD_LENGTH = 8
+MIN_PASSWORD_LENGTH = 12
 
 
 def validate_password_strength(password: str):
@@ -19,6 +19,12 @@ def validate_password_strength(password: str):
         )
     if password.strip() == "":
         raise HTTPException(status_code=400, detail="La contraseña no puede estar vacía")
+    if not any(char.islower() for char in password):
+        raise HTTPException(status_code=400, detail="La contraseña debe incluir una letra minúscula")
+    if not any(char.isupper() for char in password):
+        raise HTTPException(status_code=400, detail="La contraseña debe incluir una letra mayúscula")
+    if not any(char.isdigit() for char in password):
+        raise HTTPException(status_code=400, detail="La contraseña debe incluir un número")
 
 
 def assert_can_assign_role(actor, target_role_name: str, db: Session):
@@ -32,16 +38,17 @@ def assert_can_assign_role(actor, target_role_name: str, db: Session):
     from app.core.security import get_user_permissions
     from app.models.role import Role
 
-    if actor.role == "admin":
-        return
     if not target_role_name:
         raise HTTPException(status_code=400, detail="Rol requerido")
-    if target_role_name == "admin":
-        raise HTTPException(status_code=403, detail="No podés asignar el rol 'admin'")
 
     role = db.query(Role).filter(Role.name == target_role_name).first()
     if not role:
         raise HTTPException(status_code=400, detail=f"Rol inexistente: {target_role_name}")
+
+    if actor.role == "admin":
+        return
+    if target_role_name == "admin":
+        raise HTTPException(status_code=403, detail="No podés asignar el rol 'admin'")
 
     actor_perms = set(get_user_permissions(actor))
     target_perms = set(role.get_permissions())

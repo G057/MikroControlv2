@@ -16,7 +16,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("users", sa.Column("session_timeout_minutes", sa.Integer(), nullable=True))
+    bind = op.get_bind()
+    columns = {column["name"] for column in sa.inspect(bind).get_columns("users")}
+    if "session_timeout_minutes" not in columns:
+        op.add_column("users", sa.Column("session_timeout_minutes", sa.Integer(), nullable=True))
 
 
 def downgrade() -> None:
