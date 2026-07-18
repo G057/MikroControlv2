@@ -561,7 +561,7 @@ function SyslogTab({ settings, onSave, c }: { settings: SystemSettings; onSave: 
         ))}
       </div>
       <div className="rounded-lg p-4 text-xs leading-5" style={{ background: c.bgPage, border: `1px solid ${c.border}`, color: c.textMuted }}>
-        <strong style={{ color: c.textSecondary }}>Puertos:</strong> <em>Puerto UDP</em> es donde escucha MikroControl. <em>Puerto público RouterOS</em> es opcional y se usa si un firewall/NAT publica otro puerto, por ejemplo `18514 → 5140`. Luego, desde el detalle del router, usá <em>Configurar logs</em>: crea o actualiza la acción remota UDP con formato BSD Syslog, sus reglas de eventos y el registro durable a disco. No uses Syslog para detectar routers offline: esa tarea corresponde a Health Check.
+        <strong style={{ color: c.textSecondary }}>Puertos:</strong> <em>Puerto UDP</em> es donde escucha MikroControl. <em>Puerto público RouterOS</em> es opcional y se usa si un firewall/NAT publica otro puerto, por ejemplo `18514 → 5140`. Luego, desde el detalle del router, usá <em>Configurar logs</em>: crea o actualiza la acción remota UDP, sus reglas de eventos y el registro durable a disco. No uses Syslog para detectar routers offline: esa tarea corresponde a Health Check.
       </div>
       <button onClick={() => onSave({
         syslog_enabled: enabled ? 'true' : 'false', syslog_server_host: serverHost, syslog_port: String(port), syslog_router_port: routerPort,

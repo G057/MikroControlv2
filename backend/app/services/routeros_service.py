@@ -818,13 +818,27 @@ def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp
             return {"success": False, "error": "El router no tiene la acción de logging 'disk'"}
 
         action = next((item for item in actions if item.get("name") == syslog_action), None)
-        remote_config = f"=target=remote =remote={syslog_host} =remote-port={syslog_port} =remote-log-format=bsd-syslog"
-        if action and action.get(".id"):
-            conn.command(f"/system/logging/action/set =.id={action['.id']} {remote_config}")
-            action_created = False
-        else:
-            conn.command(f"/system/logging/action/add =name={syslog_action} {remote_config}")
-            action_created = True
+        remote_base = f"=target=remote =remote={syslog_host} =remote-port={syslog_port}"
+
+        def configure_remote_action(log_format):
+            config = f"{remote_base} =remote-log-format={log_format}"
+            if action and action.get(".id"):
+                conn.command(f"/system/logging/action/set =.id={action['.id']} {config}")
+                return False
+            conn.command(f"/system/logging/action/add =name={syslog_action} {config}")
+            return True
+
+        try:
+            action_created = configure_remote_action("bsd-syslog")
+            remote_log_format = "bsd-syslog"
+        except Exception as exc:
+            if "remote-log-format" not in str(exc).lower():
+                raise
+            # Older RouterOS releases only accept the default remote format.
+            actions = conn.command("/system/logging/action/print")
+            action = next((item for item in actions if item.get("name") == syslog_action), None)
+            action_created = configure_remote_action("default")
+            remote_log_format = "default"
 
         rules = conn.command("/system/logging/print")
         existing_disk = {tuple(sorted(filter(None, rule.get("topics", "").split(",")))) for rule in rules if rule.get("action") == "disk"}
@@ -847,7 +861,8 @@ def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp
             conn.command(f"/system/ntp/client/set =enabled=yes =primary-ntp={ntp_primary} =secondary-ntp={ntp_secondary}")
             ntp_mode = "legacy"
         return {"success": True, "disk_created": disk_created, "syslog_created": syslog_created,
-                "action_created": action_created, "configured": list(desired_topics), "ntp_mode": ntp_mode}
+                "action_created": action_created, "configured": list(desired_topics), "ntp_mode": ntp_mode,
+                "remote_log_format": remote_log_format}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
     finally:
