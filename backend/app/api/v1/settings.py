@@ -79,7 +79,12 @@ DEFAULTS = {
     "router_backup_retention_days": "30",
     "router_backup_retention_count": "60",
     "syslog_enabled": "false",
+    "syslog_server_host": "",
     "syslog_port": "5140",
+    "syslog_router_port": "",
+    "router_ntp_primary": "time.cloudflare.com",
+    "router_ntp_secondary": "time.google.com",
+    "router_time_zone": "America/Argentina/Buenos_Aires",
     "syslog_queue_max_size": "500",
     "syslog_worker_count": "1",
     "health_failures_to_offline": "3",
@@ -188,7 +193,12 @@ class SettingsUpdate(BaseModel):
     router_backup_retention_days: Optional[str] = None
     router_backup_retention_count: Optional[str] = None
     syslog_enabled: Optional[str] = None
+    syslog_server_host: Optional[str] = None
     syslog_port: Optional[str] = None
+    syslog_router_port: Optional[str] = None
+    router_ntp_primary: Optional[str] = None
+    router_ntp_secondary: Optional[str] = None
+    router_time_zone: Optional[str] = None
     syslog_queue_max_size: Optional[str] = None
     syslog_worker_count: Optional[str] = None
     health_failures_to_offline: Optional[str] = None
@@ -340,6 +350,26 @@ def update_settings(
     current_user: User = Depends(require_permission("settings:edit")),
 ):
     updates = data.model_dump(exclude_unset=True)
+    if updates.get("syslog_enabled") == "true":
+        syslog_host = updates.get("syslog_server_host", get_setting(db, "syslog_server_host", "")).strip()
+        if not syslog_host or any(char.isspace() for char in syslog_host) or "://" in syslog_host:
+            raise HTTPException(status_code=422, detail="Configurá una IP o hostname Syslog válido, sin protocolo ni espacios.")
+    for key, minimum in (("syslog_port", 1024), ("syslog_router_port", 1)):
+        if key not in updates or not updates[key]:
+            continue
+        try:
+            port = int(updates[key])
+        except ValueError:
+            raise HTTPException(status_code=422, detail=f"{key} debe ser un puerto numérico válido.")
+        if not minimum <= port <= 65535:
+            raise HTTPException(status_code=422, detail=f"{key} debe estar entre {minimum} y 65535.")
+    for key in ("router_ntp_primary", "router_ntp_secondary", "router_time_zone"):
+        if key not in updates:
+            continue
+        value = updates[key].strip()
+        if not value or any(char.isspace() for char in value) or "://" in value:
+            raise HTTPException(status_code=422, detail=f"{key} no es válido.")
+        updates[key] = value
     for days_key, time_key in (
         ("backup_schedule_days", "backup_schedule_time"),
         ("router_backup_schedule_days", "router_backup_schedule_time"),
@@ -366,9 +396,10 @@ def update_settings(
               details={"fields": list(updates.keys())},
               user_id=current_user.id, ip_address=req.client.host if req.client else None)
     db.commit()
-    if "syslog_enabled" in updates:
+    if "syslog_enabled" in updates or "syslog_port" in updates:
         from app.services.syslog_receiver import start_syslog_receiver, stop_syslog_receiver
-        if updates["syslog_enabled"] == "true":
+        if get_setting(db, "syslog_enabled", "false") == "true":
+            stop_syslog_receiver()
             start_syslog_receiver()
         else:
             stop_syslog_receiver()

@@ -133,6 +133,10 @@ class WanConfigureRequest(BaseModel):
     dns_servers: Optional[str] = None  # "8.8.8.8,1.1.1.1"
 
 
+class PersistentLoggingRequest(BaseModel):
+    router_id: int
+
+
 class TestConnectionRequest(BaseModel):
     hostname: str
     port: int = 8728
@@ -499,6 +503,47 @@ def configure_wan(
     if result.get("success"):
         log_audit(db, current_user.username, "update", "router",
                   r.id, r.name, {"action": "configure_wan", "wan_type": data.wan_type},
+                  current_user.id, req.client.host if req.client else None)
+        db.commit()
+    return result
+
+
+@router.post("/logging/persistent")
+def configure_persistent_logging(
+    data: PersistentLoggingRequest,
+    req: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("routers:terminal")),
+):
+    r = require_visible_router(data.router_id, current_user, db)
+    from app.api.v1.settings import get_setting
+    from app.services.routeros_service import configure_persistent_logging as _configure_logging
+
+    if get_setting(db, "syslog_enabled", "false") != "true":
+        raise HTTPException(status_code=422, detail="Activá y guardá el receptor Syslog antes de configurar el router.")
+    server_host = get_setting(db, "syslog_server_host", "").strip()
+    if not server_host:
+        raise HTTPException(status_code=422, detail="Configurá la IP o hostname público del receptor Syslog antes de aplicar esta configuración.")
+    if any(char.isspace() for char in server_host) or "://" in server_host:
+        raise HTTPException(status_code=422, detail="El host Syslog debe ser una IP o hostname sin protocolo ni espacios.")
+    try:
+        server_port = int(get_setting(db, "syslog_router_port", "") or get_setting(db, "syslog_port", "5140"))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="El puerto Syslog configurado no es válido.")
+    if not 1 <= server_port <= 65535:
+        raise HTTPException(status_code=422, detail="El puerto Syslog debe estar entre 1 y 65535.")
+
+    ntp_primary = get_setting(db, "router_ntp_primary", "time.cloudflare.com").strip()
+    ntp_secondary = get_setting(db, "router_ntp_secondary", "time.google.com").strip()
+    time_zone = get_setting(db, "router_time_zone", "America/Argentina/Buenos_Aires").strip()
+    if not ntp_primary or not ntp_secondary or not time_zone or any(any(char.isspace() for char in value) or "://" in value for value in (ntp_primary, ntp_secondary, time_zone)):
+        raise HTTPException(status_code=422, detail="Configurá servidores NTP y zona horaria válidos antes de aplicar esta configuración.")
+
+    result = _configure_logging(r, server_host, server_port, ntp_primary, ntp_secondary, time_zone)
+    if result.get("success"):
+        log_audit(db, current_user.username, "update", "router", r.id, r.name,
+                  {"action": "configure_persistent_logging", "disk_created": result.get("disk_created", []),
+                   "syslog_created": result.get("syslog_created", []), "ntp_mode": result.get("ntp_mode")},
                   current_user.id, req.client.host if req.client else None)
         db.commit()
     return result

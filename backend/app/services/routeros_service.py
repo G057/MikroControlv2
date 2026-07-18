@@ -805,6 +805,55 @@ def get_wan_interfaces(router) -> list:
         raise
 
 
+def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp_primary: str,
+                                 ntp_secondary: str, time_zone: str) -> dict:
+    """Configures MikroControl's remote Syslog, durable logs, NTP and timezone."""
+    desired_topics = ("system,error,critical", "ppp,info", "interface,info", "account,warning")
+    syslog_action = "mikrocontrol-syslog"
+    conn = _get_connection(router)
+    conn.connect()
+    try:
+        actions = conn.command("/system/logging/action/print")
+        if not any(action.get("name") == "disk" for action in actions):
+            return {"success": False, "error": "El router no tiene la acción de logging 'disk'"}
+
+        action = next((item for item in actions if item.get("name") == syslog_action), None)
+        remote_config = f"=target=remote =remote={syslog_host} =remote-port={syslog_port} =remote-log-format=bsd-syslog"
+        if action and action.get(".id"):
+            conn.command(f"/system/logging/action/set =.id={action['.id']} {remote_config}")
+            action_created = False
+        else:
+            conn.command(f"/system/logging/action/add =name={syslog_action} {remote_config}")
+            action_created = True
+
+        rules = conn.command("/system/logging/print")
+        existing_disk = {tuple(sorted(filter(None, rule.get("topics", "").split(",")))) for rule in rules if rule.get("action") == "disk"}
+        existing_remote = {tuple(sorted(filter(None, rule.get("topics", "").split(",")))) for rule in rules if rule.get("action") == syslog_action}
+        disk_created, syslog_created = [], []
+        for topics in desired_topics:
+            normalized = tuple(sorted(topics.split(",")))
+            if normalized not in existing_disk:
+                conn.command(f'/system/logging/add =topics={topics} =action=disk =comment="MikroControl persistent logs"')
+                disk_created.append(topics)
+            if normalized not in existing_remote:
+                conn.command(f'/system/logging/add =topics={topics} =action={syslog_action} =comment="MikroControl Syslog"')
+                syslog_created.append(topics)
+        conn.command(f"/system/clock/set =time-zone-autodetect=no =time-zone-name={time_zone}")
+        try:
+            conn.command(f"/system/ntp/client/set =enabled=yes =servers={ntp_primary},{ntp_secondary}")
+            ntp_mode = "v7"
+        except Exception:
+            # RouterOS v6 does not support the v7 `servers` property.
+            conn.command(f"/system/ntp/client/set =enabled=yes =primary-ntp={ntp_primary} =secondary-ntp={ntp_secondary}")
+            ntp_mode = "legacy"
+        return {"success": True, "disk_created": disk_created, "syslog_created": syslog_created,
+                "action_created": action_created, "configured": list(desired_topics), "ntp_mode": ntp_mode}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+    finally:
+        conn.close()
+
+
 def get_wan_config(router) -> dict:
     conn = _get_connection(router)
     conn.connect()

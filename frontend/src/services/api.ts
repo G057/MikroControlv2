@@ -142,6 +142,11 @@ export const routerosAPI = {
       method: 'POST',
       body: JSON.stringify({ router_id, target, count }),
     }),
+  configurePersistentLogging: (router_id: number) =>
+    request<{ success: boolean; disk_created?: string[]; syslog_created?: string[]; configured?: string[]; error?: string }>('/routeros/logging/persistent', {
+      method: 'POST',
+      body: JSON.stringify({ router_id }),
+    }),
   interfaces: (router_id: number) => request(`/routeros/interfaces/${router_id}`),
   resources: (router_id: number) => request(`/routeros/resources/${router_id}`),
   dhcp: (router_id: number) => request(`/routeros/dhcp/${router_id}`),
@@ -292,7 +297,12 @@ export interface SystemSettings {
   router_backup_retention_days: string;
   router_backup_retention_count: string;
   syslog_enabled: string;
+  syslog_server_host: string;
   syslog_port: string;
+  syslog_router_port: string;
+  router_ntp_primary: string;
+  router_ntp_secondary: string;
+  router_time_zone: string;
   syslog_queue_max_size: string; syslog_worker_count: string;
   health_failures_to_offline: string; health_successes_to_online: string;
 }

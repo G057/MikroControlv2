@@ -74,16 +74,26 @@ def _check_all_routers():
             results = list(ex.map(_probe_router, snapshots))
 
         # Fase 2: aplicar resultados a la BD de forma serial (un solo hilo).
+        recovered_router_ids = []
         for res in results:
             router = router_by_id.get(res["router_id"])
             if not router:
                 continue
             if res["ok"]:
-                _apply_online(db, router, now, res["resources"], res["health"])
+                if _apply_online(db, router, now, res["resources"], res["health"]) == "online":
+                    recovered_router_ids.append(router.id)
             else:
                 _handle_offline(db, router, now, res["error"] or "Sin respuesta")
 
         db.commit()
+        # Remote UDP Syslog cannot traverse the uplink that just failed. Once
+        # RouterOS API is available again, ingest its local log buffer once.
+        from app.services.log_fetcher import recover_logs
+        for router_id in recovered_router_ids:
+            try:
+                recover_logs(router_id, "connectivity_recovery")
+            except Exception as exc:
+                logger.warning("No se pudieron recuperar logs de router %s tras reconexión: %s", router_id, exc)
     except Exception as e:
         logger.error(f"Error en health check: {e}")
         db.rollback()
@@ -135,7 +145,7 @@ def _apply_online(db, router, now, resources, health):
                 except (ValueError, TypeError):
                     pass
 
-    apply_probe_result(db, router, True, now=now)
+    return apply_probe_result(db, router, True, now=now)
 
 def _handle_offline(db, router, now, error_msg):
     apply_probe_result(db, router, False, error_msg, now)

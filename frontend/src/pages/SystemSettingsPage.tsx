@@ -517,7 +517,9 @@ function MonitoringTab({ settings, onSave, c }: { settings: SystemSettings; onSa
 
 function SyslogTab({ settings, onSave, c }: { settings: SystemSettings; onSave: (d: Partial<SystemSettings>) => void; c: any }) {
   const [enabled, setEnabled] = useState(settings.syslog_enabled === 'true');
+  const [serverHost, setServerHost] = useState(settings.syslog_server_host || '');
   const [port, setPort] = useState(Number(settings.syslog_port) || 5140);
+  const [routerPort, setRouterPort] = useState(settings.syslog_router_port || '');
   const [queueSize, setQueueSize] = useState(Number(settings.syslog_queue_max_size) || 500);
   const [workers, setWorkers] = useState(Number(settings.syslog_worker_count) || 1);
 
@@ -536,7 +538,15 @@ function SyslogTab({ settings, onSave, c }: { settings: SystemSettings; onSave: 
           <Toggle value={enabled} onChange={setEnabled} c={c} />
         </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <label className="rounded-lg p-3 text-xs md:col-span-2" style={{ background: c.bgPage, border: `1px solid ${c.border}`, color: c.textSecondary }}>
+          <span className="block mb-2 font-medium">IP o hostname público</span>
+          <input type="text" value={serverHost} onChange={e => setServerHost(e.target.value.trim())} placeholder="167.59.234.225" className="input w-full text-sm font-mono py-1" disabled={!enabled} />
+        </label>
+        <label className="rounded-lg p-3 text-xs" style={{ background: c.bgPage, border: `1px solid ${c.border}`, color: c.textSecondary }}>
+          <span className="block mb-2 font-medium">Puerto público RouterOS</span>
+          <input type="number" min={1} max={65535} value={routerPort} onChange={e => setRouterPort(e.target.value)} placeholder={String(port)} className="input w-full text-center text-sm font-mono py-1" disabled={!enabled} />
+        </label>
         {[
           { label: 'Puerto UDP', value: port, set: setPort, min: 1024, max: 65535 },
           { label: 'Capacidad de cola', value: queueSize, set: setQueueSize, min: 100, max: 10000 },
@@ -551,10 +561,10 @@ function SyslogTab({ settings, onSave, c }: { settings: SystemSettings; onSave: 
         ))}
       </div>
       <div className="rounded-lg p-4 text-xs leading-5" style={{ background: c.bgPage, border: `1px solid ${c.border}`, color: c.textMuted }}>
-        <strong style={{ color: c.textSecondary }}>RouterOS:</strong> creá una acción remota UDP hacia la IP del servidor y el puerto configurado, luego asociá los topics deseados a esa acción. No uses Syslog para detectar routers offline: esa tarea corresponde a Health Check.
+        <strong style={{ color: c.textSecondary }}>Puertos:</strong> <em>Puerto UDP</em> es donde escucha MikroControl. <em>Puerto público RouterOS</em> es opcional y se usa si un firewall/NAT publica otro puerto, por ejemplo `18514 → 5140`. Luego, desde el detalle del router, usá <em>Configurar logs</em>: crea o actualiza la acción remota UDP con formato BSD Syslog, sus reglas de eventos y el registro durable a disco. No uses Syslog para detectar routers offline: esa tarea corresponde a Health Check.
       </div>
       <button onClick={() => onSave({
-        syslog_enabled: enabled ? 'true' : 'false', syslog_port: String(port),
+        syslog_enabled: enabled ? 'true' : 'false', syslog_server_host: serverHost, syslog_port: String(port), syslog_router_port: routerPort,
         syslog_queue_max_size: String(queueSize), syslog_worker_count: String(workers),
       })} className="btn-primary text-sm">
         <Save className="w-4 h-4 inline mr-1" />Guardar Syslog
@@ -581,8 +591,11 @@ function ServicesTab({ c }: { c: any }) {
 }
 
 
-function ClockTab({ c }: { c: any }) {
+function ClockTab({ settings, onSave, c }: { settings: SystemSettings; onSave: (d: Partial<SystemSettings>) => void; c: any }) {
   const [tz, setTz] = useState(getTimezone());
+  const [ntpPrimary, setNtpPrimary] = useState(settings.router_ntp_primary || 'time.cloudflare.com');
+  const [ntpSecondary, setNtpSecondary] = useState(settings.router_ntp_secondary || 'time.google.com');
+  const [routerTimezone, setRouterTimezone] = useState(settings.router_time_zone || 'America/Argentina/Buenos_Aires');
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
@@ -640,6 +653,19 @@ function ClockTab({ c }: { c: any }) {
       <button onClick={handleSave} className="btn-primary text-sm">
         <Save className="w-4 h-4 inline mr-1" />Guardar Zona Horaria
       </button>
+
+      <div className="pt-5" style={{ borderTop: `1px solid ${c.border}` }}>
+        <h3 className="text-sm font-semibold mb-1" style={{ color: c.textPrimary }}>NTP de Routers</h3>
+        <p className="text-xs mb-3" style={{ color: c.textMuted }}>Se aplicará junto con Syslog desde el botón Configurar logs de cada router.</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <label className="text-xs" style={{ color: c.textSecondary }}><span className="block mb-1 font-medium">Servidor primario</span><input className="input w-full font-mono" value={ntpPrimary} onChange={e => setNtpPrimary(e.target.value.trim())} /></label>
+          <label className="text-xs" style={{ color: c.textSecondary }}><span className="block mb-1 font-medium">Servidor secundario</span><input className="input w-full font-mono" value={ntpSecondary} onChange={e => setNtpSecondary(e.target.value.trim())} /></label>
+          <label className="text-xs" style={{ color: c.textSecondary }}><span className="block mb-1 font-medium">Zona horaria RouterOS</span><select className="input w-full" value={routerTimezone} onChange={e => setRouterTimezone(e.target.value)}>{TIMEZONES.map(z => <option key={z.value} value={z.value}>{z.label}</option>)}</select></label>
+        </div>
+        <button onClick={() => onSave({ router_ntp_primary: ntpPrimary, router_ntp_secondary: ntpSecondary, router_time_zone: routerTimezone })} className="btn-primary text-sm mt-4">
+          <Save className="w-4 h-4 inline mr-1" />Guardar NTP de Routers
+        </button>
+      </div>
     </div>
   );
 }
@@ -986,7 +1012,7 @@ export default function SystemSettingsPage() {
         {tab === 'syslog' && settings && <ErrorBoundary key="syslog"><SyslogTab settings={settings} onSave={handleSave} c={c} /></ErrorBoundary>}
         {tab === 'services' && <ErrorBoundary key="services"><ServicesTab c={c} /></ErrorBoundary>}
         {tab === 'retention' && settings && <ErrorBoundary key="retention"><RetentionTab settings={settings} onSave={handleSave} c={c} /></ErrorBoundary>}
-        {tab === 'clock' && <ErrorBoundary key="clock"><ClockTab c={c} /></ErrorBoundary>}
+        {tab === 'clock' && settings && <ErrorBoundary key="clock"><ClockTab settings={settings} onSave={handleSave} c={c} /></ErrorBoundary>}
         {tab === 'backup' && <ErrorBoundary key="backup"><BackupTab c={c} /></ErrorBoundary>}
         {tab === 'filters' && <ErrorBoundary key="filters"><EventFiltersTab c={c} /></ErrorBoundary>}
         {tab === 'classification' && <ErrorBoundary key="classification"><EventClassificationPage /></ErrorBoundary>}

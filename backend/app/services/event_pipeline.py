@@ -187,7 +187,10 @@ def ingest_event(db, item: NormalizedEvent, create_alert: bool = True, create_no
     """Persists one event. Duplicate deliveries update occurrence metadata only."""
     canonical_hash, deduplication_key = item.normalized()
     from app.core.event_filter import event_matches_filter, load_json_setting, load_storage_filters, is_event_excluded
-    if item.source == "syslog" and is_event_excluded(item.message, item.topics, load_storage_filters(db)):
+    # Syslog can be lost while a router's own uplink is down. Log recovery
+    # reads the same RouterOS buffer after reconnection, so it must honor the
+    # same storage policy and not reinsert technical API noise.
+    if item.source in ("syslog", "log_recovery") and is_event_excluded(item.message, item.topics, load_storage_filters(db)):
         return None, False, None, None
     for rule in load_json_setting(db, "event_classification_rules"):
         if rule.get("enabled", True) and event_matches_filter(item.message, item.topics, rule):
@@ -200,9 +203,11 @@ def ingest_event(db, item: NormalizedEvent, create_alert: bool = True, create_no
         window_minutes = max(1, int(get_setting(db, "event_consolidation_minutes", "5")))
     except ValueError:
         window_minutes = 5
-    repeated = db.query(EventLog).filter(EventLog.router_id == item.router_id, EventLog.source == item.source,
-                                         EventLog.deduplication_key == deduplication_key,
-                                         EventLog.last_seen >= item.received_timestamp - timedelta(minutes=window_minutes)).order_by(EventLog.id.desc()).first()
+    # Remote Syslog, the RouterOS memory buffer and disk recovery can deliver
+    # the same incident through different sources after a reconnection.
+    repeated = db.query(EventLog).filter(EventLog.router_id == item.router_id,
+                                          EventLog.deduplication_key == deduplication_key,
+                                          EventLog.last_seen >= item.received_timestamp - timedelta(minutes=window_minutes)).order_by(EventLog.id.desc()).first()
     if repeated:
         repeated.last_seen = item.received_timestamp
         repeated.occurrence_count = (repeated.occurrence_count or 1) + 1

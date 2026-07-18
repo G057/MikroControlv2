@@ -703,6 +703,7 @@ export default function RouterDetailPage() {
   const [tab, setTab] = useState<Tab>('overview');
   const [tabData, setTabData] = useState<any>(null);
   const [loadingTab, setLoadingTab] = useState(false);
+  const [configuringLogs, setConfiguringLogs] = useState(false);
   const { c } = useTheme();
   const { hasPermission } = useAuth();
 
@@ -732,6 +733,21 @@ export default function RouterDetailPage() {
   const handleRefresh = async () => {
     if (!router) return;
     try { await routersAPI.check(router.id); const updated = await routersAPI.get(router.id); setRouter(updated); toast.success('Estado actualizado'); if (tab !== 'overview' && tab !== 'config') loadTab(tab); } catch { toast.error('Error al actualizar'); }
+  };
+
+  const handleConfigurePersistentLogs = async () => {
+    if (!router || !window.confirm('Se configurarán Syslog UDP hacia MikroControl, logging a disco y NTP/zona horaria. Las reglas existentes no se modificarán.')) return;
+    setConfiguringLogs(true);
+    try {
+      const result = await routerosAPI.configurePersistentLogging(router.id);
+      if (!result.success) throw new Error(result.error || 'No se pudo configurar el logging persistente');
+      const created = (result.disk_created?.length || 0) + (result.syslog_created?.length || 0);
+      toast.success(created ? `Syslog, logs persistentes y NTP configurados (${created} reglas nuevas)` : 'Syslog, logs persistentes y NTP ya estaban configurados');
+    } catch (err: any) {
+      toast.error(err.message || 'No se pudo configurar el logging persistente');
+    } finally {
+      setConfiguringLogs(false);
+    }
   };
 
   if (!router) return <div className="flex items-center justify-center h-64" style={{ color: c.textMuted }}><RefreshCw className="w-5 h-5 animate-spin mr-2" />Cargando router...</div>;
@@ -778,7 +794,12 @@ export default function RouterDetailPage() {
         </div>
         <button onClick={handleRefresh} className="btn-secondary"><RefreshCw className="w-4 h-4 inline mr-2" />Actualizar</button>
         {hasPermission('routers:terminal') && (
-          <button onClick={() => navigate(`/terminal?router=${router.id}`)} className="btn-primary"><Terminal className="w-4 h-4 inline mr-2" />Terminal</button>
+          <>
+            <button onClick={handleConfigurePersistentLogs} disabled={configuringLogs} className="btn-secondary" title="Configura Syslog remoto y logs persistentes para MikroControl">
+              <HardDrive className={`w-4 h-4 inline mr-2 ${configuringLogs ? 'animate-pulse' : ''}`} />{configuringLogs ? 'Configurando...' : 'Configurar logs'}
+            </button>
+            <button onClick={() => navigate(`/terminal?router=${router.id}`)} className="btn-primary"><Terminal className="w-4 h-4 inline mr-2" />Terminal</button>
+          </>
         )}
       </div>
 
