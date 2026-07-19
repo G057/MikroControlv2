@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
@@ -264,11 +265,13 @@ class _PooledConnection:
         self.fingerprint = fingerprint
         self.factory = factory
         self.connection = None
+        self.connected_at = 0.0
         self.lock = threading.Lock()
 
 
 _connection_pool: dict[int, _PooledConnection] = {}
 _connection_pool_lock = threading.Lock()
+_MAX_SHARED_CONNECTION_AGE_SECONDS = 300
 
 
 @contextmanager
@@ -288,9 +291,13 @@ def shared_router_connection(router_id: int, fingerprint: tuple, factory):
 
     with entry.lock:
         try:
+            if entry.connection and time.monotonic() - entry.connected_at >= _MAX_SHARED_CONNECTION_AGE_SECONDS:
+                entry.connection.close()
+                entry.connection = None
             if not entry.connection or not entry.connection.sock:
                 entry.connection = entry.factory()
                 entry.connection.connect()
+                entry.connected_at = time.monotonic()
             yield entry.connection
         except Exception:
             # A failed command can leave the RouterOS API stream out of sync.
@@ -298,6 +305,7 @@ def shared_router_connection(router_id: int, fingerprint: tuple, factory):
             if entry.connection:
                 entry.connection.close()
                 entry.connection = None
+                entry.connected_at = 0.0
             raise
 
 
