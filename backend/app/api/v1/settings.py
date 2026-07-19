@@ -815,6 +815,7 @@ def update_alert_recovery_rules(data: dict, req: Request, db: Session = Depends(
     if not isinstance(rules, list):
         raise HTTPException(status_code=400, detail="rules debe ser una lista")
     clean = []
+    seen_ids = set()
     for rule in rules[:100]:
         if not isinstance(rule, dict):
             continue
