@@ -85,8 +85,10 @@ def _fetch_all_history():
 
 
 def _fetch_router_history(db, router):
-    from app.services.routeros_service import shared_connection
-    with shared_connection(router) as conn:
+    from app.services.routeros_service import _get_connection
+    conn = _get_connection(router)
+    conn.connect()
+    try:
         entries = conn.command("/system/history/print")
         if not entries:
             return
@@ -114,6 +116,8 @@ def _fetch_router_history(db, router):
                 undoable=entry.get("undoable", ""),
             )
             db.add(history)
+    finally:
+        conn.close()
 
 
 def _run_loop():

@@ -4,9 +4,6 @@ import ssl as ssl_module
 import logging
 import os
 import re
-import threading
-import time
-from contextlib import contextmanager
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -258,73 +255,6 @@ class RouterOSConnection:
             if any(word.decode(errors="replace") in ("!done", "!empty") for word in reply):
                 break
         return all_words
-
-
-class _PooledConnection:
-    def __init__(self, fingerprint, factory):
-        self.fingerprint = fingerprint
-        self.factory = factory
-        self.connection = None
-        self.connected_at = 0.0
-        self.lock = threading.Lock()
-
-
-_connection_pool: dict[int, _PooledConnection] = {}
-_connection_pool_lock = threading.Lock()
-_MAX_SHARED_CONNECTION_AGE_SECONDS = 300
-
-
-@contextmanager
-def shared_router_connection(router_id: int, fingerprint: tuple, factory):
-    """Serializes automatic RouterOS work through one reusable connection per router."""
-    previous = None
-    with _connection_pool_lock:
-        entry = _connection_pool.get(router_id)
-        if not entry or entry.fingerprint != fingerprint:
-            previous = entry
-            entry = _PooledConnection(fingerprint, factory)
-            _connection_pool[router_id] = entry
-    if previous:
-        with previous.lock:
-            if previous.connection:
-                previous.connection.close()
-
-    with entry.lock:
-        try:
-            if entry.connection and time.monotonic() - entry.connected_at >= _MAX_SHARED_CONNECTION_AGE_SECONDS:
-                entry.connection.close()
-                entry.connection = None
-            if not entry.connection or not entry.connection.sock:
-                entry.connection = entry.factory()
-                entry.connection.connect()
-                entry.connected_at = time.monotonic()
-            yield entry.connection
-        except Exception:
-            # A failed command can leave the RouterOS API stream out of sync.
-            # Discard it so the next automatic task creates a clean session.
-            if entry.connection:
-                entry.connection.close()
-                entry.connection = None
-                entry.connected_at = 0.0
-            raise
-
-
-@contextmanager
-def shared_connection(router):
-    fingerprint = (router.ip_address, router.access_port, router.api_username,
-                   router.api_password_encrypted, router.use_ssl)
-    with shared_router_connection(router.id, fingerprint, lambda: _get_connection(router)) as conn:
-        yield conn
-
-
-def close_shared_connections():
-    with _connection_pool_lock:
-        entries = list(_connection_pool.values())
-        _connection_pool.clear()
-    for entry in entries:
-        with entry.lock:
-            if entry.connection:
-                entry.connection.close()
 
 
 def check_router_status(router) -> dict:
