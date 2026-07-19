@@ -1,5 +1,6 @@
 import threading
 import logging
+import socket
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from app.core.database import SessionLocal
@@ -25,6 +26,18 @@ def _probe_router(snapshot: dict) -> dict:
     result = {"router_id": snapshot["id"], "ok": False, "error": None,
               "resources": None, "health": None}
     try:
+        # The shared API session can remain established after RouterOS disables
+        # its service or a firewall blocks new API clients. A fresh TCP probe
+        # validates that a new management connection is still possible without
+        # authenticating (and therefore without RouterOS login/logout noise).
+        try:
+            fresh_socket = socket.create_connection(
+                (snapshot["ip_address"], snapshot["access_port"]), timeout=5
+            )
+            fresh_socket.close()
+        except OSError:
+            result["error"] = "Puerto RouterOS API no accesible para conexiones nuevas"
+            return result
         fingerprint = (snapshot["ip_address"], snapshot["access_port"], snapshot["api_username"],
                        snapshot["api_password_encrypted"], snapshot["use_ssl"])
         def factory():
