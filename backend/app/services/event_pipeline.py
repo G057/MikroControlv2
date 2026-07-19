@@ -211,6 +211,15 @@ def ingest_event(db, item: NormalizedEvent, create_alert: bool = True, create_no
                                           EventLog.message == item.message,
                                           EventLog.last_seen >= item.received_timestamp - timedelta(minutes=window_minutes)).order_by(EventLog.id.desc()).first()
     if repeated:
+        # A matching recovery may have resolved the alert opened by this event.
+        # In that case an identical new outage is a new incident, not a duplicate.
+        resolved_incident = db.query(Alert.id).filter(
+            Alert.opening_event_id == repeated.id,
+            Alert.is_resolved == True,
+        ).first()
+        if resolved_incident:
+            repeated = None
+    if repeated:
         repeated.last_seen = item.received_timestamp
         repeated.occurrence_count = (repeated.occurrence_count or 1) + 1
         active = _active_alert(db, item.router_id, deduplication_key)
