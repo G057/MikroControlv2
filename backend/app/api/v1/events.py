@@ -137,7 +137,9 @@ def _list_events(severity, topic, router_id, search, is_resolved, source, limit,
             if visible_ids is not None:
                 q = q.filter(EventLog.router_id.in_(visible_ids))
 
-            base_q = q.order_by(desc(EventLog.id))
+            # Consolidated events keep their original ID but update last_seen.
+            # Sort by activity so repeat occurrences remain visible in Eventos.
+            base_q = q.order_by(desc(EventLog.last_seen), desc(EventLog.id))
             offset = 0
             batch = 500
             # Avoid scanning the entire event history just to fill one page.
@@ -156,12 +158,12 @@ def _list_events(severity, topic, router_id, search, is_resolved, source, limit,
                         "id": f"el_{el.id}",
                         "router_id": el.router_id,
                         "router_name": el.router_name,
-                        "time": el.ros_time if el.ros_time else (el.first_seen.strftime("%m/%d %H:%M:%S") if el.first_seen else ""),
+                        "time": el.ros_time if el.ros_time else (el.last_seen.strftime("%m/%d %H:%M:%S") if el.last_seen else ""),
                         "topics": el.topics,
                         "message": el.message,
                         "severity": el.severity,
-                        "created_at": utc_iso(el.first_seen),
-                        "sort_time": utc_iso(el.first_seen) or "",
+                        "created_at": utc_iso(el.last_seen),
+                        "sort_time": utc_iso(el.last_seen) or "",
                         "source": "router",
                     })
                     if len(router_events) >= limit:
