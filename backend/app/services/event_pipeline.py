@@ -165,8 +165,9 @@ def _apply_recovery_rules(db, item, event, create_notification: bool):
                     alert.last_seen = now
                     return alert, None, True
             severity = rule.get("severity", "warning")
+            recovery_type = f"auto_recovery_{hashlib.sha1(rule['id'].encode('utf-8')).hexdigest()[:12]}"
             alert = Alert(
-                router_id=item.router_id, alert_type=f"auto_recovery_{rule['id']}", severity=severity,
+                router_id=item.router_id, alert_type=recovery_type, severity=severity,
                 title=f"{item.router_name}: {rule.get('name', 'evento detectado')}", message=item.message[:500],
                 opening_event_id=event.id, deduplication_key=key, occurrence_count=1,
                 first_seen=now, last_seen=now,
