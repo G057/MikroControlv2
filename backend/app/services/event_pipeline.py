@@ -1,5 +1,6 @@
 """Single, idempotent write path for router events and notifications."""
 import hashlib
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
@@ -9,6 +10,8 @@ from sqlalchemy.exc import IntegrityError
 from app.models.alert import Alert
 from app.models.event_log import EventLog
 from app.models.monitoring import Notification
+
+logger = logging.getLogger(__name__)
 
 
 def _clean(value: str) -> str:
@@ -225,9 +228,14 @@ def ingest_event(db, item: NormalizedEvent, create_alert: bool = True, create_no
         # A duplicate delivery can be the first occurrence after an operator
         # enables a recovery rule. Evaluate it before returning early so the
         # rule can still open or resolve its alert without duplicating EventLog.
-        alert, notification, handled_by_recovery_rule = _apply_recovery_rules(
-            db, item, repeated, create_notification
-        )
+        try:
+            with db.begin_nested():
+                alert, notification, handled_by_recovery_rule = _apply_recovery_rules(
+                    db, item, repeated, create_notification
+                )
+        except Exception:
+            logger.exception("Recovery rule failed for consolidated event on router %s", item.router_id)
+            alert, notification, handled_by_recovery_rule = None, None, False
         if handled_by_recovery_rule:
             return repeated, False, alert, notification
         active = _active_alert(db, item.router_id, deduplication_key)
@@ -255,7 +263,13 @@ def ingest_event(db, item: NormalizedEvent, create_alert: bool = True, create_no
         event = db.query(EventLog).filter(EventLog.canonical_hash == canonical_hash).first()
         return event, False, None, None
 
-    alert, notification, handled_by_recovery_rule = _apply_recovery_rules(db, item, event, create_notification)
+    try:
+        # Recovery configuration must never roll back the underlying Syslog event.
+        with db.begin_nested():
+            alert, notification, handled_by_recovery_rule = _apply_recovery_rules(db, item, event, create_notification)
+    except Exception:
+        logger.exception("Recovery rule failed for event %s on router %s", event.id, item.router_id)
+        alert, notification, handled_by_recovery_rule = None, None, False
     if not handled_by_recovery_rule and create_alert and item.severity in ("warning", "critical"):
         alert = _active_alert(db, item.router_id, deduplication_key)
         if alert:
