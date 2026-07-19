@@ -36,6 +36,15 @@ def _probe_router(snapshot: dict) -> dict:
             resources = conn.command("/system/resource/print")
             result["resources"] = resources
             if resources:
+                services = conn.command("/ip/service/print")
+                expected_name = "api-ssl" if snapshot["use_ssl"] else "api"
+                api_service = next((service for service in services if service.get("name") == expected_name), None)
+                if api_service and api_service.get("disabled") == "true":
+                    # RouterOS keeps existing API sessions alive after the service
+                    # is disabled. Detect it explicitly and force re-authentication.
+                    conn.close()
+                    result["error"] = f"Servicio RouterOS {expected_name} deshabilitado"
+                    return result
                 result["ok"] = True
                 try:
                     result["health"] = conn.command("/system/health/print")
