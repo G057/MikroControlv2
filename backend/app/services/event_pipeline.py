@@ -222,6 +222,14 @@ def ingest_event(db, item: NormalizedEvent, create_alert: bool = True, create_no
     if repeated:
         repeated.last_seen = item.received_timestamp
         repeated.occurrence_count = (repeated.occurrence_count or 1) + 1
+        # A duplicate delivery can be the first occurrence after an operator
+        # enables a recovery rule. Evaluate it before returning early so the
+        # rule can still open or resolve its alert without duplicating EventLog.
+        alert, notification, handled_by_recovery_rule = _apply_recovery_rules(
+            db, item, repeated, create_notification
+        )
+        if handled_by_recovery_rule:
+            return repeated, False, alert, notification
         active = _active_alert(db, item.router_id, deduplication_key)
         if active:
             active.last_seen = item.received_timestamp
