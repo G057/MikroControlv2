@@ -19,34 +19,32 @@ def _probe_router(snapshot: dict) -> dict:
     """Ejecuta el I/O de red contra un router (sin tocar la BD). Se corre en un
     hilo del pool, por eso recibe un snapshot de datos ya extraídos y no el
     objeto ORM (las Session de SQLAlchemy no son thread-safe)."""
-    from app.services.routeros_service import RouterOSConnection
+    from app.services.routeros_service import RouterOSConnection, shared_router_connection
     from app.core.crypto import decrypt_secret
 
     result = {"router_id": snapshot["id"], "ok": False, "error": None,
               "resources": None, "health": None}
-    conn = RouterOSConnection(
-        host=snapshot["ip_address"],
-        port=snapshot["access_port"],
-        username=snapshot["api_username"],
-        password=decrypt_secret(snapshot["api_password_encrypted"] or ""),
-        use_ssl=snapshot["use_ssl"],
-    )
     try:
-        conn.connect()
-        resources = conn.command("/system/resource/print")
-        result["resources"] = resources
-        if resources:
-            result["ok"] = True
-            try:
-                result["health"] = conn.command("/system/health/print")
-            except Exception:
-                result["health"] = None
-        else:
-            result["error"] = "Respuesta vacía del router"
+        fingerprint = (snapshot["ip_address"], snapshot["access_port"], snapshot["api_username"],
+                       snapshot["api_password_encrypted"], snapshot["use_ssl"])
+        def factory():
+            return RouterOSConnection(
+                host=snapshot["ip_address"], port=snapshot["access_port"], username=snapshot["api_username"],
+                password=decrypt_secret(snapshot["api_password_encrypted"] or ""), use_ssl=snapshot["use_ssl"],
+            )
+        with shared_router_connection(snapshot["id"], fingerprint, factory) as conn:
+            resources = conn.command("/system/resource/print")
+            result["resources"] = resources
+            if resources:
+                result["ok"] = True
+                try:
+                    result["health"] = conn.command("/system/health/print")
+                except Exception:
+                    result["health"] = None
+            else:
+                result["error"] = "Respuesta vacía del router"
     except Exception as e:
         result["error"] = str(e)
-    finally:
-        conn.close()
     return result
 
 

@@ -114,16 +114,9 @@ def _sample_all():
 
 
 def _sample_router(db, router, now):
-    from app.services.routeros_service import _get_connection
-    conn = _get_connection(router)
-    conn.connect()
-    try:
+    from app.services.routeros_service import shared_connection
+    with shared_connection(router) as conn:
         interfaces = conn.command("/interface/print")
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
 
     if not interfaces:
         return

@@ -60,17 +60,13 @@ def recover_logs(router_id: int, reason: str = "manual", since_marker: str | Non
         router = db.get(Router, router_id)
         if not router:
             raise ValueError("Router no encontrado")
-        from app.services.routeros_service import _get_connection
-        conn = _get_connection(router)
-        try:
-            conn.connect()
+        from app.services.routeros_service import shared_connection
+        with shared_connection(router) as conn:
             logs = conn.command("/log/print")
             # Disk logs survive a reboot while the in-memory /log buffer does
             # not. Their entries are deduplicated by the event pipeline.
             disk_logs = _read_disk_logs(conn)
             logs.extend(disk_logs)
-        finally:
-            conn.close()
         result = {"router_id": router_id, "reason": reason, "consulted": len(logs), "new": 0,
                   "duplicates": 0, "errors": [], "started_at": datetime.now(timezone.utc).isoformat()}
         for entry in logs:

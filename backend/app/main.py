@@ -88,6 +88,12 @@ def on_startup():
     start_traffic_sampler()
 
 
+@app.on_event("shutdown")
+def on_shutdown():
+    from app.services.routeros_service import close_shared_connections
+    close_shared_connections()
+
+
 def _encrypt_router_passwords():
     """Migra contraseñas de routers guardadas en texto plano a cifrado Fernet."""
     from app.core.database import SessionLocal
