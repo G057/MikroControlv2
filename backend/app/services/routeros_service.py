@@ -834,10 +834,11 @@ def get_wan_interfaces(router) -> list:
 def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp_primary: str,
                                  ntp_secondary: str, time_zone: str) -> dict:
     """Configures MikroControl's remote Syslog, durable logs, NTP and timezone."""
-    # RouterOS logs carry a subsystem plus a severity topic (for example
-    # script,warning). Severity rules cover every subsystem without gaps.
-    desired_topics = ("critical", "info", "error", "warning")
-    previous_topics = {
+    # Remote Syslog needs all severities, but generic info on flash is noisy
+    # (notably RouterOS API login/logout). Disk keeps only useful recoveries.
+    remote_topics = ("critical", "info", "error", "warning")
+    disk_topics = ("critical", "error", "warning", "script,info", "ppp,info", "interface,info")
+    previous_narrow_topics = {
         tuple(sorted(topics.split(",")))
         for topics in ("system,error,critical", "ppp,info", "interface,info", "account,warning")
     }
@@ -869,21 +870,25 @@ def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp
             remote_log_format = "syslog"
 
         rules = conn.command("/system/logging/print")
-        # Remove only the narrower rules created by earlier MikroControl
-        # versions. Keeping them alongside severity rules sends duplicates.
+        # Remove previous app rules that overlap severity rules. In particular,
+        # generic info must not fill the rotating disk log with API sessions.
         for rule in rules:
             topics = tuple(sorted(filter(None, rule.get("topics", "").split(","))))
-            if rule.get("action") in ("disk", syslog_action) and topics in previous_topics and rule.get(".id"):
+            remove_disk_rule = rule.get("action") == "disk" and (topics in previous_narrow_topics or topics == ("info",))
+            remove_remote_rule = rule.get("action") == syslog_action and topics in previous_narrow_topics
+            if (remove_disk_rule or remove_remote_rule) and rule.get(".id"):
                 conn.command(f"/system/logging/remove =.id={rule['.id']}")
         rules = conn.command("/system/logging/print")
         existing_disk = {tuple(sorted(filter(None, rule.get("topics", "").split(",")))) for rule in rules if rule.get("action") == "disk"}
         existing_remote = {tuple(sorted(filter(None, rule.get("topics", "").split(",")))) for rule in rules if rule.get("action") == syslog_action}
         disk_created, syslog_created = [], []
-        for topics in desired_topics:
+        for topics in disk_topics:
             normalized = tuple(sorted(topics.split(",")))
             if normalized not in existing_disk:
                 conn.command(f"/system/logging/add =topics={topics} =action=disk")
                 disk_created.append(topics)
+        for topics in remote_topics:
+            normalized = tuple(sorted(topics.split(",")))
             if normalized not in existing_remote:
                 conn.command(f"/system/logging/add =topics={topics} =action={syslog_action}")
                 syslog_created.append(topics)
@@ -895,7 +900,7 @@ def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp
             conn.command(f"/system/ntp/client/set =enabled=yes =servers={ntp_primary},{ntp_secondary}")
             ntp_mode = "v7"
         return {"success": True, "disk_created": disk_created, "syslog_created": syslog_created,
-                "action_created": action_created, "configured": list(desired_topics), "ntp_mode": ntp_mode,
+                "action_created": action_created, "configured": {"disk": list(disk_topics), "syslog": list(remote_topics)}, "ntp_mode": ntp_mode,
                 "remote_log_format": remote_log_format, "routeros_version": routeros_version}
     except Exception as exc:
         return {"success": False, "error": str(exc)}

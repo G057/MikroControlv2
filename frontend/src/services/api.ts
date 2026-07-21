@@ -143,7 +143,7 @@ export const routerosAPI = {
       body: JSON.stringify({ router_id, target, count }),
     }),
   configurePersistentLogging: (router_id: number) =>
-    request<{ success: boolean; disk_created?: string[]; syslog_created?: string[]; configured?: string[]; error?: string }>('/routeros/logging/persistent', {
+    request<{ success: boolean; disk_created?: string[]; syslog_created?: string[]; configured?: { disk: string[]; syslog: string[] }; error?: string }>('/routeros/logging/persistent', {
       method: 'POST',
       body: JSON.stringify({ router_id }),
     }),
