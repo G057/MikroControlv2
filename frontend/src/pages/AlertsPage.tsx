@@ -161,7 +161,7 @@ export default function EventsPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {(['critical', 'warning', 'info', 'unresolved'] as const).map(key => {
           if (key === 'unresolved') {
             const active = severityFilter === 'unresolved';
@@ -245,23 +245,25 @@ export default function EventsPage() {
           return (
             <div key={ev.id} className="rounded-lg transition-all"
               style={{ background: isHealth && ev.is_resolved ? c.bgCard : s.bg, border: `1px solid ${isHealth && ev.is_resolved ? c.border : s.color + '40'}` }}>
-              <div className="flex items-center gap-3 px-4 py-2.5 cursor-pointer" onClick={() => setExpandedId(isExp ? null : ev.id)}>
-                <Icon className="w-4 h-4 shrink-0" style={{ color: s.color }} />
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-[10px] w-16 font-mono" style={{ color: c.textMuted }}>{formatTime(ev.created_at)}</span>
-                  <Server className="w-3 h-3" style={{ color: c.textMuted }} />
-                  <span className="text-xs font-medium truncate max-w-[100px]" style={{ color: c.textSecondary }}>
+              <div className="px-3 py-2.5 cursor-pointer sm:flex sm:items-center sm:gap-3" onClick={() => setExpandedId(isExp ? null : ev.id)}>
+                <div className="flex items-center gap-3 min-w-0 sm:shrink-0">
+                  <Icon className="w-4 h-4 shrink-0" style={{ color: s.color }} />
+                  <span className="text-[10px] w-16 shrink-0 font-mono" style={{ color: c.textMuted }}>{formatTime(ev.created_at)}</span>
+                  <Server className="w-3 h-3 shrink-0" style={{ color: c.textMuted }} />
+                  <span className="text-xs font-medium truncate" style={{ color: c.textSecondary }}>
                     {ev.router_name || (ev.router_id ? `Router #${ev.router_id}` : 'Sistema')}
                   </span>
+                  <div className="flex items-center gap-2 ml-auto shrink-0 sm:hidden">
+                    {isHealth && ev.is_resolved && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: c.greenBg, color: c.green }}>Resuelta</span>}
+                    <ChevronDown className="w-3.5 h-3.5 transition-transform" style={{ color: c.textMuted, transform: isExp ? 'rotate(180deg)' : 'none' }} />
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                <div className="mt-1.5 min-w-0 flex flex-wrap items-center gap-1.5 sm:mt-0 sm:flex-1 sm:flex-nowrap">
                   {ev.topics.split(',').filter(Boolean).map((t, i) => <TopicBadge key={i} topic={t} c={c} />)}
-                  <span className="text-sm truncate ml-1" style={{ color: c.textPrimary }}>{ev.message}</span>
+                  <span className="w-full text-sm break-words sm:w-auto sm:flex-1 sm:truncate sm:ml-1" style={{ color: c.textPrimary }}>{ev.message}</span>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {isHealth && ev.is_resolved && (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: c.greenBg, color: c.green }}>Resuelta</span>
-                  )}
+                <div className="hidden sm:flex items-center gap-2 shrink-0">
+                  {isHealth && ev.is_resolved && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: c.greenBg, color: c.green }}>Resuelta</span>}
                   <ChevronDown className="w-3.5 h-3.5 transition-transform" style={{ color: c.textMuted, transform: isExp ? 'rotate(180deg)' : 'none' }} />
                 </div>
               </div>
