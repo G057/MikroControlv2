@@ -335,6 +335,10 @@ def purge_storage(db: Session = Depends(get_db), current_user: User = Depends(re
         "traffic": db.query(InterfaceTraffic).filter(InterfaceTraffic.timestamp < traffic_cutoff).delete(synchronize_session=False),
         "unmatched": db.query(UnmatchedSyslogMessage).filter(UnmatchedSyslogMessage.received_at < unmatched_cutoff).delete(synchronize_session=False),
     })
+    if deleted["traffic"]:
+        # The storage screen uses PostgreSQL statistics for its row estimate.
+        # Refresh them after a manual purge so the result is visible at once.
+        db.execute(text("ANALYZE public.interface_traffic"))
     log_audit(db, current_user.username, "purge", "storage", details=deleted, user_id=current_user.id)
     db.commit()
     return {"deleted": deleted}
