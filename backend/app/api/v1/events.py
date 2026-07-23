@@ -376,6 +376,7 @@ def explore_events(
     search: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    include_resolution: bool = False,
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db),
@@ -408,10 +409,18 @@ def explore_events(
             and (not allowed_cats or see_all or event_filter.classify_category(event.topics) in allowed_cats)]
     total = len(rows)
     rows = rows[(page - 1) * page_size:page * page_size]
+    resolutions = {}
+    if include_resolution and rows:
+        alerts = db.query(Alert).filter(Alert.opening_event_id.in_([event.id for event in rows])).all()
+        resolutions = {alert.opening_event_id: alert for alert in alerts}
     return {"total": total, "page": page, "pageSize": page_size, "items": [
         {"id": e.id, "routerId": e.router_id, "routerName": e.router_name, "severity": e.severity,
-         "eventType": e.event_type, "topics": e.topics, "message": e.message,
-         "source": e.source, "receivedAt": utc_iso(e.first_seen), "routerTime": e.ros_time}
+          "eventType": e.event_type, "topics": e.topics, "message": e.message,
+          "source": e.source, "receivedAt": utc_iso(e.first_seen), "routerTime": e.ros_time,
+          **({"resolution": {"status": "resolved" if resolutions[e.id].is_resolved else "open",
+                              "resolvedAt": utc_iso(resolutions[e.id].resolved_at),
+                              "resolvedBy": resolutions[e.id].resolved_by,
+                              "comment": resolutions[e.id].resolution_comment}} if e.id in resolutions else {})}
         for e in rows
     ]}
 
