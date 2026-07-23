@@ -862,7 +862,8 @@ def configure_persistent_logging(router, syslog_host: str, syslog_port: int, ntp
             conn.command(f"/system/logging/action/add =name={syslog_action} {config}")
             return True
 
-        if routeros_major == 6:
+        supports_remote_log_format = any("remote-log-format" in item for item in actions)
+        if not supports_remote_log_format:
             action_created = configure_remote_action(f"{remote_base} =bsd-syslog=yes =syslog-time-format=bsd-syslog")
             remote_log_format = "bsd-syslog"
         else:
